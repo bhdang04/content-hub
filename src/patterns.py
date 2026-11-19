@@ -16,9 +16,13 @@ def compare(views, mask, label):
     return (f"{label}: {ma:,.0f} median views (n={len(a)}) vs {mb:,.0f} without (n={len(b)}) "
             f"-> {size:.1f}x {'MORE' if r >= 1 else 'FEWER'}{'' if size >= 2 else ' (small gap)'}")
 
+def corr(x, y):
+    """Spearman rank correlation without needing scipy."""
+    return x.rank().corr(y.rank())
+
 def link(x, y):
     """Rank correlation in plain words."""
-    c = x.rank().corr(y.rank())
+    c = corr(x, y)
     word = "more views" if c > 0 else "fewer views"
     return f"{c:+.2f} " + (f"higher goes with {word}" if abs(c) >= 0.4 else "no clear link")
 
@@ -47,19 +51,22 @@ cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_pe
         "days_since_last_post", "followers_per_1k_views"]
 
 top = views >= views.nlargest(3).min()
-print(f"== Top 3 videos vs other {(~top).sum()} (medians) ==")
-print(v.groupby(top.map({True: "top 3", False: "rest"}))[cols].median().T.round(1).to_string())
+v["title"] = cap.str[:40]
 
-print("\n== What goes with views (rank correlation, -1..+1) ==")
-for c in cols:
-    print(f"{c:24} {link(v[c], views)}")
+if __name__ == "__main__":
+    print(f"== Top 3 videos vs other {(~top).sum()} (medians) ==")
+    print(v.groupby(top.map({True: "top 3", False: "rest"}))[cols].median().T.round(1).to_string())
 
-print("\n== With vs without ==")
-lines = [compare(views, v["weekend"], "Posted Sat/Sun")]
-for tag in sorted(set(tags.explode().dropna())):
-    lines.append(compare(views, tags.apply(lambda t: tag in t), tag))
-print("\n".join(l for l in lines if l) or "Nothing: every group too small.")
+    print("\n== What goes with views (rank correlation, -1..+1) ==")
+    for c in cols:
+        print(f"{c:24} {link(v[c], views)}")
 
-print("\n== Follower conversion (followers gained in 3 days after post, per 1k views) ==")
-print(v.assign(title=cap.str[:40])[["title", "Post time", "Total views", "followers_3d", "followers_per_1k_views"]]
-      .sort_values("followers_per_1k_views", ascending=False).to_string(index=False))
+    print("\n== With vs without ==")
+    lines = [compare(views, v["weekend"], "Posted Sat/Sun")]
+    for tag in sorted(set(tags.explode().dropna())):
+        lines.append(compare(views, tags.apply(lambda t: tag in t), tag))
+    print("\n".join(l for l in lines if l) or "Nothing: every group too small.")
+
+    print("\n== Follower conversion (followers gained in 3 days after post, per 1k views) ==")
+    print(v[["title", "Post time", "Total views", "followers_3d", "followers_per_1k_views"]]
+          .sort_values("followers_per_1k_views", ascending=False).to_string(index=False))
