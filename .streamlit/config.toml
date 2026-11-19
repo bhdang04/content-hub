@@ -1,5 +1,9 @@
 [theme]
-primaryColor = "#E11D48"
+base = "dark"
+primaryColor = "#FE2C55"
+backgroundColor = "#0A0A0C"
+secondaryBackgroundColor = "#16161A"
+textColor = "#F2F2F2"
 
 [server]
 address = "localhost"  # dashboard reachable from this Mac only
