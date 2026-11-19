@@ -12,4 +12,6 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 7. Later: content planning, scripts, competitor research, trends
 
 ## Data
-Put TikTok Studio exports in `data/raw/` (git-ignored, personal data).
+Put TikTok Studio exports in `data/raw/` (git-ignored, personal data):
+- `data/raw/year/`: past-365-days export (Overview, Content, Followers, Viewers). Used by `analyze.py`, `patterns.py`, `recommend.py`.
+- `data/raw/week/`: past-7-days export. Used by `track.py` to score new videos against the last saved advice (`data/recs/`).

@@ -3,7 +3,7 @@ Run: python3 src/recommend.py
 Rules read the numbers each run; nothing is hardcoded to one export."""
 import json, os
 import pandas as pd
-from data import act, fol, ANCHOR
+from data import act, fol, END
 from patterns import v, views, tags, top, corr
 
 # column -> (plain name, what you can do about it)
@@ -78,7 +78,8 @@ print(f"Based on {len(v)} videos. Treat as bets to test, not rules. Re-run after
 
 # step 6: save targets so track.py can score the next videos against them
 snap = {
-    "export_date": str(ANCHOR.date()),
+    "export_date": str(END.date()),
+    "last_post": str(v["Post time"].max().date()),  # exports can lag; track.py counts videos after this as new
     "median_views": float(med(views)),
     "median_followers_per_1k": float(med(v["followers_per_1k_views"])),
     "shares_per_1k_target": float(med(top_v["shares_per_1k"])),

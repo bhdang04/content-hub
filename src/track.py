@@ -1,24 +1,26 @@
 """Step 6: score videos posted since the last saved recommendations against their targets.
-Flow per new export: python3 src/track.py (score last advice), then python3 src/recommend.py (new advice + targets).
+Reads data/raw/week/ (past-week export). Advice comes from recommend.py on data/raw/year/.
 Exports have no post hour, so timing advice can't be checked."""
 import glob, json, os
-from data import ANCHOR
+os.environ.setdefault("CONTENT_HUB_RAW", "data/raw/week")  # must run before data is imported
+from data import END
 from patterns import v, tags, compare
 
-snaps = sorted(p for p in glob.glob("data/recs/*.json") if os.path.basename(p)[:10] < str(ANCHOR.date()))
+snaps = sorted(p for p in glob.glob("data/recs/*.json") if os.path.basename(p)[:10] < str(END.date()))
 if not snaps:
-    raise SystemExit(f"No saved recommendations from before this export ({ANCHOR.date()}). "
+    raise SystemExit(f"No saved recommendations from before this export ({END.date()}). "
                      "Run recommend.py now; track.py works once a newer export is in data/raw/.")
 s = json.load(open(snaps[-1]))
-new = v[v["Post time"] > s["export_date"]].copy()
-print(f"Recommendations from {s['export_date']}, export {ANCHOR.date()}: {len(new)} new videos.")
+new = v[v["Post time"] > s["last_post"]].copy()
+print(f"Recommendations from {s['export_date']} (last video seen {s['last_post']}), "
+      f"export ending {END.date()}: {len(new)} new videos.")
 print("Advice given then:")
 for head, items in s["recommendations"].items():
     print("".join(f"  [{head}] {x}\n" for x in items), end="")
 if new.empty:
     raise SystemExit("\nNothing to score yet: no videos posted since then.")
 
-new["age_days"] = (ANCHOR - new["Post time"]).dt.days
+new["age_days"] = (END - new["Post time"]).dt.days
 new["views>median"] = new["Total views"] > s["median_views"]
 new["shares>=target"] = new["shares_per_1k"] >= s["shares_per_1k_target"]
 new["followers>median"] = new["followers_per_1k_views"] > s["median_followers_per_1k"]

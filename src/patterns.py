@@ -44,7 +44,7 @@ v["days_since_last_post"] = v["Post time"].diff().dt.days
 v["weekend"] = v["Post time"].dt.dayofweek >= 5
 # shortcut: posts < 3 days apart share the window, so their gain is double-counted; fine for spotting outliers
 gain = fol.set_index("Date")["Followers"].diff()
-v["followers_3d"] = [gain.loc[d:d + pd.Timedelta(days=2)].sum() for d in v["Post time"]]
+v["followers_3d"] = [gain.loc[d:d + pd.Timedelta(days=2)].sum(min_count=1) for d in v["Post time"]]  # NaN = outside export range
 v["followers_per_1k_views"] = (v["followers_3d"] / views.where(views > 0) * 1000).round(1)
 
 cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_per_1k",
