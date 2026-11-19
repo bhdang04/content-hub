@@ -1,8 +1,9 @@
 """Step 5: turn step 4 patterns into what to POST, IMPROVE, TEST.
 Run: python3 src/recommend.py
 Rules read the numbers each run; nothing is hardcoded to one export."""
+import json, os
 import pandas as pd
-from data import act, fol
+from data import act, fol, ANCHOR
 from patterns import v, views, tags, top, corr
 
 # column -> (plain name, what you can do about it)
@@ -74,3 +75,20 @@ for head, items in (("POST", post), ("IMPROVE", improve), ("TEST", test)):
     print("\n".join(f"{i}. {s}" for i, s in enumerate(items, 1)) or "Nothing from this data.")
     print()
 print(f"Based on {len(v)} videos. Treat as bets to test, not rules. Re-run after each new export.")
+
+# step 6: save targets so track.py can score the next videos against them
+snap = {
+    "export_date": str(ANCHOR.date()),
+    "median_views": float(med(views)),
+    "median_followers_per_1k": float(med(v["followers_per_1k_views"])),
+    "shares_per_1k_target": float(med(top_v["shares_per_1k"])),
+    "caption_len": [float(med(top_v["caption_len"])), float(med(rest_v["caption_len"]))],
+    "days_since_last_post": [float(med(top_v["days_since_last_post"])), float(med(rest_v["days_since_last_post"]))],
+    "common_tags": always,
+    "recommendations": {"post": post, "improve": improve, "test": test},
+}
+os.makedirs("data/recs", exist_ok=True)
+path = f"data/recs/{snap['export_date']}.json"
+with open(path, "w") as fh:
+    json.dump(snap, fh, indent=1, ensure_ascii=False)
+print(f"Saved targets to {path} for step 6 tracking.")

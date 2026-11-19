@@ -1,5 +1,6 @@
 data/raw/*
 !data/raw/.gitkeep
+data/recs/
 __pycache__/
 .venv/
 .DS_Store
