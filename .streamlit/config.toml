@@ -1,0 +1,8 @@
+[theme]
+primaryColor = "#E11D48"
+
+[server]
+address = "localhost"  # dashboard reachable from this Mac only
+
+[browser]
+gatherUsageStats = false
