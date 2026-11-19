@@ -6,8 +6,8 @@ import pandas as pd
 RAW = os.environ.get("CONTENT_HUB_RAW", "data/raw/year")
 
 def newest(prefix):
-    # several exports of one kind: Overview names sort by date; others carry no date, so replace them
-    found = sorted(glob.glob(f"{RAW}/{prefix}*.zip"))
+    # several exports of one kind: use the latest downloaded/uploaded (file names aren't reliably dated)
+    found = sorted(glob.glob(f"{RAW}/{prefix}*.zip"), key=os.path.getmtime)
     if not found:
         raise SystemExit(f"No {prefix}*.zip in {RAW}/. Export it from TikTok Studio and put it there.")
     return found[-1]
