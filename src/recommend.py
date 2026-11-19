@@ -50,10 +50,10 @@ if quiet > 14:
 for col, (name, action) in LEVERS.items():
     c, b = corr(v[col], views), bucket(corr(v[col], views))
     t, r = med(top_v[col]), med(rest_v[col])
-    if b == "act":
+    if b == "act" and (c > 0 or col in TESTABLE):  # never advise fewer likes/comments/shares: they're outcomes
         improve.append(f"{action[0].upper() + action[1:]}: {name} tracks views ({c:+.2f}). Top 3 median {t:g} vs rest {r:g}. Aim for {t:g}+."
                        if c > 0 else f"Lower {name}: more of it goes with fewer views ({c:+.2f}). Top 3 median {t:g} vs rest {r:g}.")
-    elif b == "test" and col in TESTABLE:
+    elif b == "test" and col in TESTABLE and t != r:  # same median on both sides = nothing to test
         test.append(f"{name}: weak link ({c:+.2f}), top 3 median {t:g} vs rest {r:g}. "
                     f"Next 4 posts: 2 near {t:g}, 2 near {r:g}, keep all else the same.")
 

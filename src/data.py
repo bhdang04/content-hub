@@ -15,7 +15,19 @@ def newest(prefix):
 def load(prefix, name):
     return pd.read_csv(zipfile.ZipFile(newest(prefix)).open(name))
 
-videos = load("Content", "Content.csv")
+def all_videos():
+    """Each Content export holds only ~15 top videos, so merge every Content zip under data/raw/
+    (keep old ones, e.g. week/Content_2026-11-18.zip). One row per video, stats from the newest file."""
+    zips = sorted(glob.glob("data/raw/**/Content*.zip", recursive=True), key=os.path.getmtime)
+    if not zips:
+        raise SystemExit("No Content*.zip under data/raw/. Export it from TikTok Studio and put it there.")
+    # shortcut: newest = latest file modified time (download time); breaks if old zips get re-downloaded/touched
+    df = pd.concat([pd.read_csv(zipfile.ZipFile(z).open("Content.csv")) for z in zips], ignore_index=True)
+    out = df.drop_duplicates("Video link", keep="last").reset_index(drop=True)
+    assert out["Video link"].is_unique and len(out) <= len(df)
+    return out
+
+videos = all_videos()
 overview = load("Overview", "Overview.csv")
 fol = load("Followers", "FollowerHistory.csv")
 viewers = load("Viewers", "Viewers.csv")

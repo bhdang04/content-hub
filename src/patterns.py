@@ -32,6 +32,21 @@ assert "10.0x MORE" in _t and "n=2" in _t, _t
 assert compare(pd.Series([1, 2, 3]), pd.Series([True, False, False]), "x") is None
 assert link(pd.Series([1, 2, 3]), pd.Series([1, 2, 3])).startswith("+1.00 higher goes with more views")
 
+def split_followers(post_times, views, gain, days=3):
+    """Credit each day's follower gain to videos posted in the `days` days up to it, split by views,
+    so near-daily posts don't all claim the same followers. NaN = no follower data for its window."""
+    credit = pd.Series(float("nan"), index=post_times.index)
+    for day, g in gain.dropna().items():
+        near = post_times.index[(post_times <= day) & (post_times > day - pd.Timedelta(days=days))]
+        if len(near):
+            w = views[near].clip(lower=1)
+            credit[near] = credit[near].fillna(0) + g * w / w.sum()
+    return credit
+
+_d = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-03-01"])
+_c = split_followers(pd.Series(_d), pd.Series([300, 100, 5]), pd.Series([40.0, 0.0], index=pd.to_datetime(["2026-01-02", "2026-01-03"])))
+assert list(_c[:2]) == [30.0, 10.0] and pd.isna(_c[2]), _c  # 40 split 3:1 by views; no data for March
+
 v = videos.sort_values("Post time").reset_index(drop=True)
 views = v["Total views"]
 cap = v["Video title"].astype(str)
@@ -42,9 +57,8 @@ for k in ("likes", "comments", "shares"):
     v[f"{k}_per_1k"] = (v[f"Total {k}"] / views.where(views > 0) * 1000).round(1)
 v["days_since_last_post"] = v["Post time"].diff().dt.days
 v["weekend"] = v["Post time"].dt.dayofweek >= 5
-# shortcut: posts < 3 days apart share the window, so their gain is double-counted; fine for spotting outliers
-gain = fol.set_index("Date")["Followers"].diff()
-v["followers_3d"] = [gain.loc[d:d + pd.Timedelta(days=2)].sum(min_count=1) for d in v["Post time"]]  # NaN = outside export range
+# shortcut: Content export holds ~15 top videos, so unlisted posts' followers get credited to listed ones
+v["followers_3d"] = split_followers(v["Post time"], views, fol.set_index("Date")["Followers"].diff()).round(1)
 v["followers_per_1k_views"] = (v["followers_3d"] / views.where(views > 0) * 1000).round(1)
 
 cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_per_1k",
