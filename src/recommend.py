@@ -42,7 +42,9 @@ day = act.groupby(act["Date"].dt.day_name())["Active followers"].mean().idxmax()
 post.append(f"Post just before your followers peak: {', '.join(f'{h}:00' for h in hours)}. Busiest day: {day}.")
 quiet = (fol["Date"].max() - v["Post time"].max()).days
 if quiet > 14:
-    post.insert(0, f"Post again: last video was {quiet} days before this export. Nothing else here matters until you post.")
+    # Content export seems capped at 15 videos (top by views?), so newer low-view posts can be missing
+    post.insert(0, f"None of your newest posts are in this export's top {len(v)}: the newest one listed is {quiet} days old. "
+                   f"New posts aren't reaching your usual views yet.")
 
 # IMPROVE (strong link) / TEST (weak link)
 for col, (name, action) in LEVERS.items():
