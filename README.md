@@ -24,7 +24,7 @@ Build one part at a time, in this order. Each part is one script in `src/`, run 
 
 **8a. Content planning: `src/plan.py`**
 - Input: the newest advice in `data/recs/`.
-- Output: a 2-week posting calendar, `data/plans/<date>.csv` (git-ignored). One row per post: date, time slot, idea type (remake of a top video / follower-getter format / test), caption length target, hashtag set.
+- Output: a 2-week posting calendar, `data/plans/<start>_<n>-a-day.csv` (git-ignored). Run `python3 src/plan.py [1-3]` (videos per day, default 2) or open the dashboard Plan page. One row per post: date, time slot, idea type (remake of a top video / follower-getter format / test), caption length target, hashtag set.
 - Spreads the A/B tests across posts so each side gets 2+ videos.
 - `track.py` later matches posted videos to plan rows by date and reports whether the plan was followed.
 - No new dependency.

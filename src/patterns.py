@@ -69,7 +69,10 @@ NAMES = {"caption_len": "characters in the caption", "hashtags": "hashtags", "li
          "days_since_last_post": "days since your previous post", "followers_per_1k_views": "new followers per 1,000 views"}
 
 top = views >= views.nlargest(3).min()
-v["title"] = cap.str[:40]
+# caption without hashtags, @mentions or dance credits ("dc: @x", "tag dc"); all-hashtag captions kept as is
+clean = (cap.str.replace(r"(?i)\b(tag\s+)?dc\b:?.*$", "", regex=True).str.replace(r"[#@]\S+", "", regex=True)
+         .str.replace("|", "").str.strip().str.replace(r"\s{3,}.*$", "", regex=True))  # drop leftover credit words
+v["title"] = clean.where(clean != "", cap).str[:40]
 
 if __name__ == "__main__":
     print(f"== Top 3 videos vs other {(~top).sum()} (medians) ==")
