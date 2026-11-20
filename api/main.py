@@ -152,7 +152,7 @@ def patterns():
     return clean({
         "top_count": int(pat.top.sum()), "other_count": int((~pat.top).sum()),
         "differences": [{"what": pat.NAMES[c], "top": g.loc[True, c], "other": g.loc[False, c],
-                         "meaning": pat.verdict(c, pat.corr(v[c], views))} for c in pat.cols],
+                         "meaning": pat.verdict(c, pat.link_strength(c))} for c in pat.cols],
         "followers": rows(pd.DataFrame({"title": f["title"], "posted": day(f["Post time"]), "views": f["Total views"],
                                         "followers_per_1k": f["followers_per_1k_views"]})
                           .sort_values("followers_per_1k", ascending=False)),

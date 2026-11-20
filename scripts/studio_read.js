@@ -30,7 +30,7 @@ function pick(id, r) {
     video_id: id,
     posted_at: v.create_time,
     private_status: v.status?.private_status,  // 0 = public; non-zero = private/friends (import skips)
-    title: (v.desc || "").slice(0, 100),
+    title: v.desc || "",  // full caption: patterns.py counts its length and hashtags
     length_ms: v.video?.duration,
     views: s.play_count, likes: s.digg_count, comments: s.comment_count,
     shares: s.share_count, saves: s.collect_count,

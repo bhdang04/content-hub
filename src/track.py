@@ -20,7 +20,7 @@ for head, items in s["recommendations"].items():
 if new.empty:
     raise SystemExit("\nNothing to score yet: no videos posted since then.")
 
-new["age_days"] = (END - new["Post time"]).dt.days
+new["age_days"] = (END - new["Post time"]).dt.days.clip(lower=0)  # Studio posts can be newer than the export
 new["views>median"] = new["Total views"] > s["median_views"]
 new["shares>=target"] = new["shares_per_1k"] >= s["shares_per_1k_target"]
 new["followers>median"] = new["followers_per_1k_views"] > s["median_followers_per_1k"]

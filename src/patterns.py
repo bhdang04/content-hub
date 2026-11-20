@@ -2,6 +2,7 @@
 Run: python3 src/patterns.py
 Small sample (15 videos): every finding is a hint to test, not proof.
 Exports have no post hour or video length, so those are not checked."""
+import json, os, sqlite3
 import pandas as pd
 from data import videos, fol
 
@@ -70,36 +71,83 @@ _d = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-03-01"])
 _c = split_followers(pd.Series(_d), pd.Series([300, 100, 5]), pd.Series([40.0, 0.0], index=pd.to_datetime(["2026-01-02", "2026-01-03"])))
 assert list(_c[:2]) == [30.0, 10.0] and pd.isna(_c[2]), _c  # 40 split 3:1 by views; no data for March
 
-v = videos.sort_values("Post time").reset_index(drop=True)
+def studio_videos(db="data/hub.db"):
+    """Studio per-post rows (every public post, real new-follower counts) in the Content-export column names.
+    None if there's no Studio data. Ads left out: paid views would make them look like hits."""
+    if not os.path.exists(db):
+        return None
+    con = sqlite3.connect(db)
+    try:
+        s = pd.read_sql("SELECT * FROM posts WHERE is_ad = 0", con)
+    finally:
+        con.close()
+    if s.empty:
+        return None
+    # early reads cut captions at 100 chars; take the full one from a Content export when it has the video
+    full = videos.set_index(videos["Video link"].str.extract(r"/video/(\d+)")[0])["Video title"]
+    s["title"] = s["video_id"].map(full).where(s["title"].str.len() >= 100).fillna(s["title"])
+    s = s.sort_values("posted_at").reset_index(drop=True)
+    ret = s["retention_json"].map(json.loads)
+    return pd.DataFrame({
+        "Video title": s["title"],
+        "Post time": pd.to_datetime(s["posted_at"], unit="s", utc=True).dt.tz_convert("America/Los_Angeles").dt.tz_localize(None),
+        "Total views": s["views"], "Total likes": s["likes"], "Total comments": s["comments"], "Total shares": s["shares"],
+        "Total saves": s["saves"], "new_followers": s["new_followers"],
+        "kept_3s": ret.map(lambda r: r[3] if len(r) > 3 else None).astype(float),
+        "full_watch_rate": s["full_watch_rate"],
+        "gap_days": (s["posted_at"].diff() / 86400).round(1),
+        "Video link": "https://www.tiktok.com/video/" + s["video_id"],
+    })
+
+studio = studio_videos()
+STUDIO = studio is not None
+v = (studio if STUDIO else videos.sort_values("Post time")).reset_index(drop=True)
 views = v["Total views"]
 cap = v["Video title"].astype(str)
 tags = cap.str.lower().str.findall(r"#\w+")
 v["caption_len"] = cap.str.len()
 v["hashtags"] = tags.str.len()
-for k in ("likes", "comments", "shares"):
+for k in ("likes", "comments", "shares") + (("saves",) if STUDIO else ()):
     v[f"{k}_per_1k"] = (v[f"Total {k}"] / views.where(views > 0) * 1000).round(1)
-# no "days since previous post": exports list only ~25 of your posts, so gaps between them are fake
-# (69 days when you post daily). Add it back once per-post data covers every video.
+# "days since previous post" only with Studio data: exports list ~25 posts, so their gaps are fake
 v["weekend"] = v["Post time"].dt.dayofweek >= 5
-# shortcut: Content export holds ~15 top videos, so unlisted posts' followers get credited to listed ones
-v["followers_3d"] = split_followers(v["Post time"], views, fol.set_index("Date")["Followers"].diff()).round(1)
-v["followers_per_1k_views"] = (v["followers_3d"] / views.where(views > 0) * 1000).round(1)
+if STUDIO:
+    v["new_followers_est"] = v["new_followers"]  # Studio's own count
+else:
+    # shortcut: Content export holds ~15 top videos, so unlisted posts' followers get credited to listed ones
+    v["new_followers_est"] = split_followers(v["Post time"], views, fol.set_index("Date")["Followers"].diff()).round(1)
+v["followers_per_1k_views"] = (v["new_followers_est"] / views.where(views > 0) * 1000).round(1)
 
 cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_per_1k", "followers_per_1k_views"]
+if STUDIO:
+    v["kept_3s"] = (v["kept_3s"] * 100).round()
+    v["full_watch_rate"] = (v["full_watch_rate"] * 100).round(1)
+    cols += ["kept_3s", "full_watch_rate", "saves_per_1k", "gap_days"]
+    TESTABLE.add("gap_days")
 # plain-English names for the dashboard and recommend.py
 NAMES = {"caption_len": "characters in the caption", "hashtags": "hashtags", "likes_per_1k": "likes per 1,000 views",
          "comments_per_1k": "comments per 1,000 views", "shares_per_1k": "shares per 1,000 views",
-         "followers_per_1k_views": "new followers per 1,000 views"}
+         "followers_per_1k_views": "new followers per 1,000 views",
+         "kept_3s": "% still watching at 3s", "full_watch_rate": "% who watched to the end",
+         "saves_per_1k": "saves per 1,000 views", "gap_days": "days since the post before"}
 
-top = views >= views.nlargest(3).min()
+TOP_N = 6 if STUDIO else 3  # ~10% of 60 Studio posts; exports hold only ~15
+top = views >= views.nlargest(TOP_N).min()
+
+def link_strength(col):
+    """Rank correlation with views, or NaN when it points the other way from the top-vs-rest medians
+    shown next to it (e.g. "big videos get fewer likes" while the top ones have more): that's no clear sign."""
+    c = corr(v[col], views)
+    g = v.groupby(top)[col].median()
+    return float("nan") if (g[True] - g[False]) * c < 0 else c
 # caption without hashtags, @mentions or dance credits ("dc: @x", "tag dc"); all-hashtag captions kept as is
 clean = (cap.str.replace(r"(?i)\b(tag\s+)?dc\b:?.*$", "", regex=True).str.replace(r"[#@]\S+", "", regex=True)
          .str.replace("|", "").str.strip().str.replace(r"\s{3,}.*$", "", regex=True))  # drop leftover credit words
 v["title"] = clean.where(clean != "", cap).str[:40]
 
 if __name__ == "__main__":
-    print(f"== Top 3 videos vs other {(~top).sum()} (medians) ==")
-    print(v.groupby(top.map({True: "top 3", False: "rest"}))[cols].median().T.round(1).to_string())
+    print(f"== Top {TOP_N} videos vs other {(~top).sum()} (medians) ==" + (" [Studio data]" if STUDIO else " [Content exports]"))
+    print(v.groupby(top.map({True: f"top {TOP_N}", False: "rest"}))[cols].median().T.round(1).to_string())
 
     print("\n== What goes with views (rank correlation, -1..+1) ==")
     for c in cols:
@@ -111,6 +159,6 @@ if __name__ == "__main__":
         lines.append(compare(views, tags.apply(lambda t: tag in t), tag))
     print("\n".join(l for l in lines if l) or "Nothing: every group too small.")
 
-    print("\n== Follower conversion (followers gained in 3 days after post, per 1k views) ==")
-    print(v[["title", "Post time", "Total views", "followers_3d", "followers_per_1k_views"]]
+    print("\n== Follower conversion (new followers per 1k views) ==")
+    print(v[["title", "Post time", "Total views", "new_followers_est", "followers_per_1k_views"]]
           .sort_values("followers_per_1k_views", ascending=False).to_string(index=False))
