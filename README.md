@@ -51,7 +51,7 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 **Build order**
 1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅
 2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice. (Read + `./run.sh import` + detail page done Nov 20; advice + days-since-previous-post left.)
-3. Plan calendar (tap a dance, tap a slot), plus possible dances from Saved and Remake. (Calendar + Remake done Nov 20, grouped by sound + "dc: @creator": repeatable 4x+, done 1-3x. Saved read left.)
+3. Plan calendar (tap a dance, tap a day; up to 3 a day, no set times) + Library tab (one tile per dance you have done, by sound + "dc: @creator", best video shown; "Add to plan"). Done Nov 20; Saved read ("Tiktok Dances to Do" Favorites) left.
 4. Creative Center read (adds Trending).
 5. Competitors page (adds Competitor).
 

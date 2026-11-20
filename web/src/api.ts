@@ -42,14 +42,18 @@ export type PostDetail = Post & {
   usual: PostNums; usual_retention: number[]; usual_from: number; advice: string[];
 };
 export type Dance = {
-  key: string; label: string; name: string; times: number; best_video_id: string; best_views: number; last_posted: number; planned: boolean;
+  key: string; label: string; name: string; times: number; best_video_id: string; best_views: number; last_posted: number;
 };
 export type Plan = {
-  hours: number[];
   days: { date: string; posted: number }[];
   planned: { date: string; slot: number; key: string; name: string }[];
-  dances: Dance[];
+  shortlist: { key: string; label: string; planned: boolean }[];
+  dances: Dance[]; // best views first
 };
+/** Write to the plan/shortlist tables. Returns false when the API refuses or is down. */
+export const send = (path: string, method: string, body?: object) =>
+  fetch(`/api/${path}`, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) })
+    .then((r) => r.ok, () => false);
 export type Patterns = {
   top_count: number;
   other_count: number;
@@ -57,25 +61,25 @@ export type Patterns = {
   followers: { video_id: string; title: string; posted: string; views: number; followers_per_1k: number }[];
 };
 
-/** GET /api/<path>. Refetches when `version` changes (after an upload). */
+/** GET /api/<path>. Refetches when `version` changes (after an upload or a save), keeping the old data on
+ * screen meanwhile so the page doesn't blank out and jump to the top. A new `path` starts empty. */
 export function useApi<T>(path: string, version = 0) {
-  const [state, setState] = useState<{ data?: T; error?: string }>({});
+  const [state, setState] = useState<{ path?: string; data?: T; error?: string }>({});
   useEffect(() => {
     let live = true;
-    setState({});
     fetch(`/api/${path}`)
       .then(async (r) => {
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.detail ?? `${r.status} ${r.statusText}`);
         return body as T;
       })
-      .then((data) => live && setState({ data }))
-      .catch((e: Error) => live && setState({ error: e.message }));
+      .then((data) => live && setState({ path, data }))
+      .catch((e: Error) => live && setState({ path, error: e.message }));
     return () => {
       live = false;
     };
   }, [path, version]);
-  return state;
+  return state.path === path ? state : {};
 }
 
 export const short = (n: number) =>
