@@ -3,8 +3,9 @@ import HomePage from "./pages/Home";
 import VideosPage from "./pages/Videos";
 import PatternsPage from "./pages/Patterns";
 import VideoPage from "./pages/Video";
+import PlanPage from "./pages/Plan";
 
-const PAGES = { home: "Home", videos: "Videos", patterns: "Patterns" } as const;
+const PAGES = { home: "Home", plan: "Plan", videos: "Videos", patterns: "Patterns" } as const;
 type Page = keyof typeof PAGES;
 const fromHash = (): Page => (location.hash.slice(1) in PAGES ? (location.hash.slice(1) as Page) : "home");
 const videoId = () => location.hash.match(/^#video\/(\d+)$/)?.[1]; // #video/<id> = one video's detail page
@@ -35,6 +36,7 @@ export default function App() {
         {!video && page === "home" && <HomePage version={version} onUploaded={() => setVersion((v) => v + 1)} />}
         {!video && page === "videos" && <VideosPage version={version} />}
         {!video && page === "patterns" && <PatternsPage version={version} />}
+        {!video && page === "plan" && <PlanPage version={version} />}
       </main>
     </div>
   );

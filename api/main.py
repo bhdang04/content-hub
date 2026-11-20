@@ -227,6 +227,74 @@ def post(video_id: str):
     p["advice"] = opening_advice(p, p["usual"], base["length_s"].median())
     return p
 
+# ---------- Plan: 2-week calendar of dances (plan table in data/hub.db) ----------
+PLAN_SCHEMA = "CREATE TABLE IF NOT EXISTS plan (date TEXT, slot INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, slot))"
+
+def plan_db():
+    con = sqlite3.connect(ROOT / "data" / "hub.db")
+    con.execute(PLAN_SCHEMA)
+    return con
+
+@app.get("/api/plan")
+def plan():
+    from dances import dances
+    df = studio()  # 409s with a plain message when there's no Studio data
+    data, _ = mods()
+    # busiest follower hours, at least 2 apart so your own posts don't compete
+    # shortcut: assumes FollowerActivity hours are PST (your zone); unverified, re-check if peaks look off
+    hours = []
+    for h in data.act.groupby("Hour")["Active followers"].mean().sort_values(ascending=False).index:
+        if all(abs(h - x) >= 2 for x in hours):
+            hours.append(int(h))
+        if len(hours) == 3:
+            break
+    days = [str(d.date()) for d in pd.date_range(pd.Timestamp.now(tz="America/Los_Angeles").date(), periods=14)]
+    con = plan_db()
+    try:
+        planned = pd.read_sql("SELECT date, slot, dance_key AS key, dance_name AS name FROM plan WHERE date >= ?", con, params=[days[0]])
+    finally:
+        con.close()
+    posted = df["posted"].value_counts()
+    d = dances(df[df["is_ad"] == 0]) if "music_id" in df else pd.DataFrame(columns=["key"])  # an ad isn't a dance
+    d["planned"] = d["key"].isin(planned["key"])
+    return clean({
+        "hours": sorted(hours),
+        "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
+        "planned": rows(planned),
+        "dances": rows(d),
+    })
+
+def _slot(day: str, slot: int):
+    """Trust boundary: the page sends these, so check them before they reach the database."""
+    try:
+        ok = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", day)) and date.fromisoformat(day) and 0 <= slot <= 2
+    except ValueError:  # 2026-02-31
+        ok = False
+    if not ok:
+        raise HTTPException(400, "bad day or slot")
+
+@app.put("/api/plan/{day}/{slot}")
+async def plan_put(day: str, slot: int, request: Request):
+    _slot(day, slot)
+    body = await request.json()
+    key, name = body.get("key"), body.get("name")
+    if not (isinstance(key, str) and isinstance(name, str) and 0 < len(key) <= 100 and 0 < len(name) <= 200):
+        raise HTTPException(400, "bad dance")
+    con = plan_db()
+    with con:
+        con.execute("INSERT OR REPLACE INTO plan VALUES (?, ?, ?, ?)", (day, slot, key, name))
+    con.close()
+    return {"ok": True}
+
+@app.delete("/api/plan/{day}/{slot}")
+def plan_delete(day: str, slot: int):
+    _slot(day, slot)
+    con = plan_db()
+    with con:
+        con.execute("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+    con.close()
+    return {"ok": True}
+
 # ---------- upload ----------
 KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}
 MAX_BYTES = 200 * 1024 * 1024

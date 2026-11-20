@@ -41,6 +41,15 @@ export type PostDetail = Post & {
   retention: number[]; search_terms: [string, number][];
   usual: PostNums; usual_retention: number[]; usual_from: number; advice: string[];
 };
+export type Dance = {
+  key: string; label: string; name: string; times: number; best_video_id: string; best_views: number; last_posted: number; planned: boolean;
+};
+export type Plan = {
+  hours: number[];
+  days: { date: string; posted: number }[];
+  planned: { date: string; slot: number; key: string; name: string }[];
+  dances: Dance[];
+};
 export type Patterns = {
   top_count: number;
   other_count: number;

@@ -11,18 +11,20 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS posts (
   avg_watch_s REAL, full_watch_rate REAL, new_followers INTEGER,
   pct_for_you REAL, pct_search REAL, pct_profile REAL, pct_following REAL, pct_other REAL,
   retention_json TEXT, search_terms_json TEXT,
-  is_ad INTEGER, read_at INTEGER)"""
+  is_ad INTEGER, read_at INTEGER, music_id TEXT, music_title TEXT, music_author TEXT)"""
 
 COLS = ["video_id", "posted_at", "title", "length_s", "views", "likes", "comments", "shares", "saves",
         "avg_watch_s", "full_watch_rate", "new_followers", "pct_for_you", "pct_search", "pct_profile",
-        "pct_following", "pct_other", "retention_json", "search_terms_json", "is_ad", "read_at"]
+        "pct_following", "pct_other", "retention_json", "search_terms_json", "is_ad", "read_at",
+        "music_id", "music_title", "music_author"]
 
 
 def row(r):
     t = r.get("traffic", {})
     return {
         **{k: r.get(k) for k in ["video_id", "posted_at", "title", "views", "likes", "comments", "shares",
-                                 "saves", "avg_watch_s", "full_watch_rate", "new_followers", "read_at"]},
+                                 "saves", "avg_watch_s", "full_watch_rate", "new_followers", "read_at",
+                                 "music_id", "music_title", "music_author"]},
         "length_s": r["length_ms"] / 1000 if r.get("length_ms") else None,
         "pct_for_you": t.get("For You"), "pct_search": t.get("Search"),
         "pct_profile": t.get("Personal Profile"), "pct_following": t.get("Follow"),
@@ -49,6 +51,10 @@ def main():
     con = sqlite3.connect(DB)
     with con:
         con.execute(SCHEMA)
+        have = {r[1] for r in con.execute("PRAGMA table_info(posts)")}
+        for c in ("music_id", "music_title", "music_author"):  # tables made before sounds were read
+            if c not in have:
+                con.execute(f"ALTER TABLE posts ADD COLUMN {c} TEXT")
         con.executemany(
             f"INSERT OR REPLACE INTO posts ({','.join(COLS)}) VALUES ({','.join(':' + c for c in COLS)})",
             rows.values())

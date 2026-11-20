@@ -45,6 +45,14 @@ function pick(id, r) {
   };
 }
 
+// Studio's insight data has no sound, so read it from the post's public page (same site, same cookies).
+async function sound(id) {
+  const h = await fetch(`https://www.tiktok.com/@dangggbrian/video/${id}`, { credentials: "include" }).then(r => r.text());
+  const m = h.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  const mu = m && JSON.parse(m[1]).__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct?.music;
+  return mu ? { music_id: mu.id, music_title: mu.title, music_author: mu.authorName } : { music_id: null };
+}
+
 async function studioRead(ids, gapMs = 1000) {
   const urls = ids.map(insightUrl);  // build all first so the template survives the page swap
   const lines = [];
@@ -52,7 +60,8 @@ async function studioRead(ids, gapMs = 1000) {
     try {
       const r = await fetch(urls[i], { credentials: "include" }).then(x => x.json());
       if (r.status_code !== 0) throw new Error(`status_code ${r.status_code} ${r.status_msg || ""}`);
-      lines.push(JSON.stringify(pick(ids[i], r)));
+      await new Promise(ok => setTimeout(ok, gapMs));
+      lines.push(JSON.stringify({ ...pick(ids[i], r), ...(await sound(ids[i])) }));
     } catch (e) {
       lines.push(JSON.stringify({ video_id: ids[i], error: String(e) }));
     }

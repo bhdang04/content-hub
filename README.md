@@ -15,7 +15,6 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 ## Run
 ```
 ./run.sh              # dashboard: open http://127.0.0.1:5173 (Ctrl+C stops it)
-./run.sh plan [1-3]   # 2-week posting calendar, videos per day (default 2)
 ./run.sh analyze      # text report: views, engagement, followers, viewers
 ./run.sh recommend    # refresh the advice
 ./run.sh track        # did the last advice work? (past-7-days export)
@@ -50,9 +49,9 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 - No personal data hardcoded in screens, so a fake-data demo mode can be added later for a portfolio.
 
 **Build order**
-1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅ (Plan stays in `./run.sh plan` until step 3.)
+1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅
 2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice. (Read + `./run.sh import` + detail page done Nov 20; advice + days-since-previous-post left.)
-3. Plan calendar with drag-and-drop, plus possible dances from Saved and Remake.
+3. Plan calendar (tap a dance, tap a slot), plus possible dances from Saved and Remake. (Calendar + Remake done Nov 20, grouped by sound + "dc: @creator": repeatable 4x+, done 1-3x. Saved read left.)
 4. Creative Center read (adds Trending).
 5. Competitors page (adds Competitor).
 
