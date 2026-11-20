@@ -9,42 +9,44 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 4. AI agent: find patterns, explain performance ✅
 5. Recommendations: what to post, improve, test ✅
 6. Track recommendations against next videos ✅
-7. Dashboard: `streamlit run src/dashboard.py` (local only). Tabs for analyze, patterns, recommendations, track; sidebar upload for exports.
-8. Later: content planning, scripts, competitor research, trends (plan below, not built)
+7. Dashboard v1: `streamlit run src/dashboard.py` (local only). Being replaced by v2 below.
+8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (plan below, not built)
 
-## Step 8 plan
-Build one part at a time, in this order. Each part is one script in `src/`, run on real data, with an assert self-check.
+## Dashboard v2 plan
+Decided Nov 20, 2026. Used weekly: upload exports, then say "update my dashboard" in a Claude chat.
 
-**Before starting**
-- Content exports are capped at 15 videos (out of 400-600), even for the 7-day range. They seem to be the most-viewed in the range, not the newest. Options:
-  - **Chosen:** keep every weekly Content zip under a dated name (e.g. `Content_2026-11-18.zip`) and merge them in `data.py` by video link, keeping the newest stats. This builds a full list from now on.
-  - Recent videos the export misses, plus extra stats: use Claude in Chrome on your TikTok Studio pages to save per-video stats (views, likes, comments, shares, avg watch time, watched full video %) to `data/raw/studio_<date>.csv`, with the same video-link column so `data.py` can merge it. This also adds the watch time that step 3 couldn't get.
-  - Older videos (optional): profile-grid screenshots (about 40), read once into `data/raw/`. That gives views in post order only, with no dates, captions or likes.
-- Commit the step 6 fixes.
+**Pages**
+1. **Home**: what to post next (incl. hook/retention tips), goal line ("12.0K / 15K, need ~270/week, did X last week"), "did last week's advice work?" card (replaces Track), dances to try, upload exports.
+2. **Videos**: table of all posts; click one for its detail page: its Studio numbers vs your usual, drop-off second, traffic source.
+3. **Patterns**: what the biggest videos do differently; which videos won followers.
+4. **Plan**: 2-week calendar, up to 3 posts a day. Possible dances below, labeled Saved / Trending / Remake / Competitor; drag one onto a day. A day ticks off when a post shows up on that date; flagged if the sound differs from the plan. A dance leaves the list once scheduled.
+5. **Competitors**: editable table, 3-5 dance accounts (20K-200K), last ~5 hits each: link, views, likes, comments, shares, caption, sound, format (1-person / 2-person / trend / original). Comparison: "their 2-person videos get 3x views; you post 2-person X%".
 
-**8a. Content planning: `src/plan.py`**
-- Input: the newest advice in `data/recs/`.
-- Output: a 2-week posting calendar, `data/plans/<start>_<n>-a-day.csv` (git-ignored). Run `python3 src/plan.py [1-3]` (videos per day, default 2) or open the dashboard Plan page. One row per post: date, time slot, idea type (remake of a top video / follower-getter format / test), caption length target, hashtag set.
-- Spreads the A/B tests across posts so each side gets 2+ videos.
-- `track.py` later matches posted videos to plan rows by date and reports whether the plan was followed.
-- No new dependency.
+Analyze is folded into Videos and Home; Track and Recommendations are gone.
 
-**8b. Scripts: `src/scripts.py`**
-- Input: plan rows plus your top videos' captions.
-- Output: `data/plans/<date>_scripts.md`, with a hook line, a shot list and a caption per planned post.
-- Decision needed: templates (no AI, nothing leaves your machine) or the Claude API (better writing; needs the `anthropic` package, an API key, and a change to the "no outside services" rule for captions).
+**Data**
+- TikTok Studio zips: uploaded as now.
+- Weekly "update my dashboard" chat; Claude in Chrome reads:
+  - Studio per-post pages: every post once, then the last ~10 each week. Views, likes, comments, shares, saves, play time, avg watch time, watched full %, new followers, drop-off second, traffic source. Not the hourly chart.
+  - TikTok Creative Center trends.
+  - The "Dance ideas" Favorites collection.
+- Competitor rows: typed in the Competitors page.
+- Stored in one SQLite file, `data/hub.db` (git-ignored). Exports stay as zips.
+- No scripts feature: ask Claude in chat for script help.
 
-**8c. Competitor research: `src/competitors.py`**
-- TikTok has no free API for other accounts' stats, and scraping breaks its terms.
-- Plan: you fill `data/competitors.csv` by hand (handle, video link, views, likes, comments, shares, caption). Post dates come from the video ID, as they do now.
-- Reuses the `patterns.py` functions to compare their share rate, caption length and hashtags against yours. Output: what they do that you don't.
-- Decision needed: a manual CSV, the TikTok Research API (academics only, needs approval) or a paid third-party API.
+**Tech**
+- Same repo: `api/` (FastAPI, imports from `src/`) and `web/` (React + TypeScript + Tailwind + Recharts + dnd-kit).
+- `./run.sh` starts both while building; once done, the API serves the built React app. Localhost only.
+- Same look as v1: TikTok black/red/cyan tokens, flat cards, color only on data (cyan = good, red = bad), 22px card padding.
+- No personal data hardcoded in screens, so a fake-data demo mode can be added later for a portfolio.
+- Streamlit gets deleted once React matches it.
 
-**8d. Trends: `src/trends.py`**
-- Source: TikTok Creative Center (trending sounds and hashtags). It has no stable public API.
-- Plan: once a week, paste the top sounds and hashtags into `data/trends.csv` (date, type, name, rank).
-- Flags trends that fit your niche (dance) and that are rising week on week. `plan.py` then adds them as idea slots.
-- Decision needed: the same choice as in 8c, manual or an API.
+**Build order**
+1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit.
+2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice.
+3. Plan calendar with drag-and-drop, plus possible dances from Saved and Remake.
+4. Creative Center read (adds Trending).
+5. Competitors page (adds Competitor).
 
 ## Data
 Put TikTok Studio exports in `data/raw/` (git-ignored, personal data):
