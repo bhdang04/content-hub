@@ -36,11 +36,13 @@ print("Last 30d net:", diff.tail(30).sum(), "| prior 30d net:", diff.iloc[-60:-3
 print("Best 5 days:\n", diff.nlargest(5).to_string())
 m = diff.resample("ME").sum()
 print("Monthly net:\n", m.tail(6).to_string())
+print("Followers at the end of each week (last 12):\n", f["Followers"].resample("W").last().tail(12).astype(int).to_string())
 
 # --- viewers: new vs returning ---
 vw = viewers.set_index("Date")
+new, ret = vw["New Viewers"].sum(), vw["Returning Viewers"].sum()
 print("\n== Viewers (all period) ==")
-print("New share %:", round(vw["New Viewers"].sum() / (vw["New Viewers"] + vw["Returning Viewers"]).sum() * 100, 1))
+print(f"New: {new:,.0f} | Returning: {ret:,.0f} | New share %: {new / (new + ret) * 100:.1f}")
 
 # --- when followers are active ---
 top = act.groupby("Hour")["Active followers"].mean().nlargest(3)

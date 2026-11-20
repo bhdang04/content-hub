@@ -131,7 +131,7 @@ function Upload({ onUploaded }: { onUploaded: () => void }) {
     setBusy(true);
     const out = [];
     for (const f of files) {
-      const r = await fetch(`/api/upload?range=${range}&name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+      const r = await fetch(`/api/upload?range=${range}&name=${encodeURIComponent(f.name)}`, { method: "POST", body: f, headers: { "X-Content-Hub": "1" } });
       const body = await r.json().catch(() => ({}));
       out.push(r.ok ? { ok: true, text: `Saved ${f.name} to ${body.saved}.` } : { ok: false, text: body.detail ?? `${f.name}: upload failed.` });
     }

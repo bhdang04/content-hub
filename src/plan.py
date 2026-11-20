@@ -59,8 +59,6 @@ if cap_test:
 
 print(f"Plan from advice dated {s['export_date']}: {len(plan)} videos, {per_day} a day, "
       f"{start.date()} to {plan['date'].iloc[-1]}.")
-if NAMES["days_since_last_post"] in tests_txt:
-    print("Skipped the 'days since your previous post' test: it needs gaps of days, and you post daily.")
 print("Monday vs other days needs no planning: you post every day, so Track can compare them.\n")
 print(plan.to_string(index=False))
 

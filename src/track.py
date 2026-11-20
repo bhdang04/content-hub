@@ -35,9 +35,8 @@ if (new["age_days"] < 7).any():
 print("\n== Test results (median views among new videos) ==")
 views = new["Total views"]
 tests = []
-for col, unit in (("caption_len", "chars"), ("days_since_last_post", "days gap")):
-    hi, lo = s[col]
-    tests.append((f"{col} near {hi:g} {unit} (vs near {lo:g})", (new[col] - hi).abs() < (new[col] - lo).abs()))
+hi, lo = s["caption_len"]
+tests.append((f"caption_len near {hi:g} chars (vs near {lo:g})", (new["caption_len"] - hi).abs() < (new["caption_len"] - lo).abs()))
 if s["common_tags"]:
     tests.append((f"Using {' '.join(s['common_tags'])}", tags.loc[new.index].apply(lambda t: set(s["common_tags"]) <= set(t))))
 tests.append(("Posted Sat/Sun", new["weekend"]))

@@ -1,11 +1,12 @@
-"""Dashboard v2 API: JSON for the React app in web/. Reads the same scripts as the Streamlit dashboard.
+"""Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
 Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
 Localhost only; your data is not sent anywhere."""
-import io, json, os, re, subprocess, sys, zipfile
+import io, json, os, re, subprocess, sys, threading, zipfile
 from datetime import date
 from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)  # the scripts read data/raw/... relative to the project root
@@ -14,9 +15,13 @@ sys.path.insert(0, str(ROOT / "src"))
 GOAL, GOAL_DATE = 15_000, date(2027, 2, 28)  # follower goal and deadline
 
 app = FastAPI(title="Content Hub API")
+# refuse requests addressed to any other site name, so a web page can't reach this API by
+# pointing its own domain at 127.0.0.1 (DNS rebinding)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
-# ---------- loading (same approach as src/dashboard.py) ----------
+# ---------- loading ----------
 _cache = {}
+_lock = threading.Lock()  # requests run in parallel threads; two loads at once break each other's imports
 
 def stamp():
     """Changes whenever an export zip or a src/ script changes, so cached results refresh."""
@@ -24,10 +29,11 @@ def stamp():
     return max((p.stat().st_mtime for p in files), default=0)
 
 def cached(key, make):
-    s = stamp()
-    if key not in _cache or _cache[key][0] != s:
-        _cache[key] = (s, make())
-    return _cache[key][1]
+    with _lock:
+        s = stamp()
+        if key not in _cache or _cache[key][0] != s:
+            _cache[key] = (s, make())
+        return _cache[key][1]
 
 def _load():
     os.environ["CONTENT_HUB_RAW"] = "data/raw/year"
@@ -137,10 +143,10 @@ def videos():
                       "engagement_pct": engagement(v), "link": v["Video link"]})
     return rows(t.sort_values("views", ascending=False))
 
-CHOICES = {"caption_len", "hashtags", "days_since_last_post"}  # you decide these; the rest are results
+CHOICES = {"caption_len", "hashtags"}  # you decide these; the rest are results
 
 def verdict(col, c):
-    """Rank correlation -> what it means, in words. Copied from src/dashboard.py."""
+    """Rank correlation -> what it means, in words."""
     if pd.isna(c) or abs(c) < 0.2:
         return "No real difference"
     sure = "Clear sign" if abs(c) >= 0.4 else "Maybe"
@@ -165,13 +171,16 @@ def patterns():
                           .sort_values("followers_per_1k", ascending=False)),
     })
 
-# ---------- upload (zip check + save copied from src/dashboard.py; Streamlit goes away later) ----------
+# ---------- upload ----------
 KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}
 MAX_BYTES = 200 * 1024 * 1024
 
 @app.post("/api/upload")
 async def upload(request: Request, range: str, name: str = ""):
     """Body = the raw zip bytes. Never uses the uploaded file name as a path."""
+    # other sites can't add custom headers without a CORS OK we never give, so this blocks cross-site uploads
+    if request.headers.get("x-content-hub") != "1":
+        raise HTTPException(403, "Upload from the Content Hub page only.")
     if range not in ("year", "week"):
         raise HTTPException(400, "range must be year or week")
     body = await request.body()

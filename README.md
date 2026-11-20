@@ -9,8 +9,17 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 4. AI agent: find patterns, explain performance ✅
 5. Recommendations: what to post, improve, test ✅
 6. Track recommendations against next videos ✅
-7. Dashboard v1: `streamlit run src/dashboard.py` (local only). Being replaced by v2 below.
-8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (plan below, not built)
+7. Dashboard v1 (Streamlit): retired Nov 20, 2026, replaced by v2.
+8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (step 1 built; rest below)
+
+## Run
+```
+./run.sh              # dashboard: open http://127.0.0.1:5173 (Ctrl+C stops it)
+./run.sh plan [1-3]   # 2-week posting calendar, videos per day (default 2)
+./run.sh analyze      # text report: views, engagement, followers, viewers
+./run.sh recommend    # refresh the advice
+./run.sh track        # did the last advice work? (past-7-days export)
+```
 
 ## Dashboard v2 plan
 Decided Nov 20, 2026. Used weekly: upload exports, then say "update my dashboard" in a Claude chat.
@@ -39,10 +48,9 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 - `./run.sh` starts both while building; once done, the API serves the built React app. Localhost only.
 - Same look as v1: TikTok black/red/cyan tokens, flat cards, color only on data (cyan = good, red = bad), 22px card padding.
 - No personal data hardcoded in screens, so a fake-data demo mode can be added later for a portfolio.
-- Streamlit gets deleted once React matches it.
 
 **Build order**
-1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit.
+1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅ (Plan stays in `./run.sh plan` until step 3.)
 2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice.
 3. Plan calendar with drag-and-drop, plus possible dances from Saved and Remake.
 4. Creative Center read (adds Trending).

@@ -55,18 +55,18 @@ v["caption_len"] = cap.str.len()
 v["hashtags"] = tags.str.len()
 for k in ("likes", "comments", "shares"):
     v[f"{k}_per_1k"] = (v[f"Total {k}"] / views.where(views > 0) * 1000).round(1)
-v["days_since_last_post"] = v["Post time"].diff().dt.days
+# no "days since previous post": exports list only ~25 of your posts, so gaps between them are fake
+# (69 days when you post daily). Add it back once per-post data covers every video.
 v["weekend"] = v["Post time"].dt.dayofweek >= 5
 # shortcut: Content export holds ~15 top videos, so unlisted posts' followers get credited to listed ones
 v["followers_3d"] = split_followers(v["Post time"], views, fol.set_index("Date")["Followers"].diff()).round(1)
 v["followers_per_1k_views"] = (v["followers_3d"] / views.where(views > 0) * 1000).round(1)
 
-cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_per_1k",
-        "days_since_last_post", "followers_per_1k_views"]
+cols = ["caption_len", "hashtags", "likes_per_1k", "comments_per_1k", "shares_per_1k", "followers_per_1k_views"]
 # plain-English names for the dashboard and recommend.py
 NAMES = {"caption_len": "characters in the caption", "hashtags": "hashtags", "likes_per_1k": "likes per 1,000 views",
          "comments_per_1k": "comments per 1,000 views", "shares_per_1k": "shares per 1,000 views",
-         "days_since_last_post": "days since your previous post", "followers_per_1k_views": "new followers per 1,000 views"}
+         "followers_per_1k_views": "new followers per 1,000 views"}
 
 top = views >= views.nlargest(3).min()
 # caption without hashtags, @mentions or dance credits ("dc: @x", "tag dc"); all-hashtag captions kept as is

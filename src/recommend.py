@@ -13,9 +13,8 @@ LEVERS = {
     "likes_per_1k": ("End on a moment people want to like (a big move, a funny face, a loop)", None),
     "comments_per_1k": ("Give people a reason to comment: ask a question in the caption", None),
     "shares_per_1k": ("Make videos people want to send to a friend: tag-a-friend dances, duets, 'you vs me' hooks", None),
-    "days_since_last_post": ("Space your posts out more", "Post more often"),
 }
-TESTABLE = {"caption_len", "hashtags", "days_since_last_post"}  # you set these directly; rates are outcomes
+TESTABLE = {"caption_len", "hashtags"}  # you set these directly; rates are outcomes
 
 def bucket(c):
     """Rank correlation -> act on it, test it, or skip it."""
@@ -81,7 +80,7 @@ for head, items in (("WHAT TO POST", post), ("WHAT TO FIX", improve), ("WHAT TO 
     print("\n".join(f"{i}. {s}" for i, s in enumerate(items, 1)) or "Nothing from this data.")
     print()
 print(f"Based on {len(v)} of your videos. These are educated guesses from your own numbers: "
-      f"try them, then check the Track tab.")
+      f"try them, then run ./run.sh track after your next export.")
 
 # step 6: save targets so track.py can score the next videos against them
 snap = {
@@ -91,7 +90,6 @@ snap = {
     "median_followers_per_1k": float(med(v["followers_per_1k_views"])),
     "shares_per_1k_target": float(med(top_v["shares_per_1k"])),
     "caption_len": [float(med(top_v["caption_len"])), float(med(rest_v["caption_len"]))],
-    "days_since_last_post": [float(med(top_v["days_since_last_post"])), float(med(rest_v["days_since_last_post"]))],
     "common_tags": always,
     "recommendations": {"post": post, "improve": improve, "test": test},
 }

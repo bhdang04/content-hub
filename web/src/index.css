@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* TikTok palette from src/dashboard.py + .streamlit/config.toml.
+/* TikTok palette (same as the old Streamlit dashboard).
    Color goes on data only: good = cyan, bad = red. Cards are flat: no shadows, no gradients. */
 @theme {
   --color-ground: #0a0a0c;
