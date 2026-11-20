@@ -48,6 +48,8 @@ export type Plan = {
   days: { date: string; posted: number }[];
   planned: { date: string; slot: number; key: string; name: string }[];
   shortlist: { key: string; label: string; planned: boolean }[];
+  // "Tiktok Dances to Do" Favorites, named by song; done = times you've posted the same dance
+  ideas: { key: string; label: string; credit: string; video_id: string; author: string; done: number; planned: boolean }[];
   dances: Dance[]; // best views first
 };
 /** Write to the plan/shortlist tables. Returns false when the API refuses or is down. */

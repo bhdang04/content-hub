@@ -36,6 +36,21 @@ def row(r):
     }
 
 
+def favorites(con):
+    """Newest data/raw/favorites/*.jsonl (the "Tiktok Dances to Do" collection) replaces the ideas table:
+    the collection's current state, so videos you un-saved drop out."""
+    files = sorted(glob.glob("data/raw/favorites/*.jsonl"))
+    if not files:
+        return
+    rows = [json.loads(l) for l in open(files[-1], encoding="utf-8")]
+    cols = ["video_id", "author", "caption", "music_id", "music_title", "music_author", "read_at"]
+    with con:
+        con.execute("DROP TABLE IF EXISTS ideas")
+        con.execute(f"CREATE TABLE ideas ({', '.join(c + ' TEXT' for c in cols)})")
+        con.executemany(f"INSERT INTO ideas VALUES ({','.join('?' * len(cols))})", [[r.get(c) for c in cols] for r in rows])
+    print(f"Imported {len(rows)} saved dances from {files[-1]}.")
+
+
 def main():
     files = sorted(glob.glob("data/raw/studio/*.jsonl"))
     if not files:
@@ -58,6 +73,7 @@ def main():
         con.executemany(
             f"INSERT OR REPLACE INTO posts ({','.join(COLS)}) VALUES ({','.join(':' + c for c in COLS)})",
             rows.values())
+    favorites(con)
     total, ads = con.execute("SELECT COUNT(*), SUM(is_ad) FROM posts").fetchone()
     assert total >= len(rows)
     print(f"Imported {len(rows)} posts from {len(files)} file(s), skipped {skipped} private/error. "

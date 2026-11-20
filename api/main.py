@@ -250,19 +250,29 @@ def plan_write(sql, args):
 
 @app.get("/api/plan")
 def plan():
-    from dances import dances
+    from dances import dances, dance_key, credit, song
     df = studio()  # 409s with a plain message when there's no Studio data
     days = [str(d.date()) for d in pd.date_range(pd.Timestamp.now(tz="America/Los_Angeles").date(), periods=14)]
     con = plan_db()
     try:
         planned = pd.read_sql("SELECT date, slot, dance_key AS key, dance_name AS name FROM plan WHERE date >= ?", con, params=[days[0]])
         short = pd.read_sql("SELECT dance_key AS key, label FROM shortlist ORDER BY added_at", con)
+        has_ideas = con.execute("SELECT 1 FROM sqlite_master WHERE name = 'ideas'").fetchone()
+        ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
     finally:
         con.close()
     posted = df["posted"].value_counts()
     d = dances(df[df["is_ad"] == 0]) if "music_id" in df else pd.DataFrame(columns=["key"])  # an ad isn't a dance
+    done = dict(zip(d["key"], d["times"]))
+    want = [{"key": dance_key(r.music_id, r.caption, r.author), "label": song(r.music_title, r.music_author),
+             "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author}
+            for r in ideas.itertuples()]
+    for w in want:
+        w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
+        w["planned"] = w["key"] in set(planned["key"])
     return clean({
         "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
+        "ideas": want,
         "planned": rows(planned),
         "shortlist": rows(short.assign(planned=short["key"].isin(planned["key"]))),
         "dances": rows(d.sort_values("best_views", ascending=False)),

@@ -31,7 +31,6 @@ export default function LibraryPage({ version }: { version: number }) {
               <iframe src={`https://www.tiktok.com/player/v1/${d.best_video_id}?description=0&music_info=0&rel=0`}
                       title={d.label} loading="lazy" allow="fullscreen" className="w-full aspect-[9/16] rounded-lg bg-grid" />
               <a href={`#video/${d.best_video_id}`} className="font-bold mt-2 block break-words hover:underline">{d.label}</a>
-              <p className="text-muted text-xs break-words">{d.name}</p>
               <p className="text-muted text-xs">Done {d.times}x · best {num(d.best_views)} views</p>
               <button onClick={() => toggle(d.key, d.label)}
                       className={`mt-2 w-full text-sm rounded-lg py-1.5 border ${inPlan.has(d.key) ? "border-good text-good" : "border-grid hover:border-good"}`}>
