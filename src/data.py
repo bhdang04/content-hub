@@ -51,6 +51,10 @@ def to_date(col):
         out.append(t.replace(year=year)); prev = t  # shortcut: Feb 29 in a non-leap year raises; fix if it ever happens
     return pd.Series(out[::-1], index=col.index)
 
+# self-check: 400 days ending at OV_END always cross a New Year; every date must get its year back
+_days = pd.date_range(end=OV_END, periods=400)
+assert (to_date(pd.Series(_days.strftime("%B %d"))) == _days).all(), "to_date got a year wrong"
+
 for name, d in (("Overview", overview), ("Followers", fol), ("Viewers", viewers), ("Followers", act)):
     d["Date"] = to_date(d["Date"])
     off = abs((d["Date"].max() - OV_END).days)

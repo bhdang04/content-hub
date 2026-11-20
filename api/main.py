@@ -81,7 +81,7 @@ def home():
     fol = data.fol.set_index("Date")["Followers"]
     last, prev = o.iloc[-28:].sum(), o.iloc[-56:-28].sum()
     now, week = fol.iloc[-1], fol.iloc[-1] - fol.iloc[-8]
-    weeks_left = max((GOAL_DATE - data.END.date()).days / 7, 1)
+    weeks_left = max((GOAL_DATE - date.today()).days / 7, 1)  # from today: an old export mustn't make the pace look easier
 
     def advice():
         script("recommend")
@@ -143,19 +143,6 @@ def videos():
                       "engagement_pct": engagement(v), "link": v["Video link"]})
     return rows(t.sort_values("views", ascending=False))
 
-CHOICES = {"caption_len", "hashtags"}  # you decide these; the rest are results
-
-def verdict(col, c):
-    """Rank correlation -> what it means, in words."""
-    if pd.isna(c) or abs(c) < 0.2:
-        return "No real difference"
-    sure = "Clear sign" if abs(c) >= 0.4 else "Maybe"
-    if col in CHOICES:
-        return f"{sure}: {'more' if c > 0 else 'less'} of this went with more views" + ("" if abs(c) >= 0.4 else " (test it)")
-    if c > 0:
-        return f"{sure}: big videos get more of these. Aim for it."
-    return f"{sure}: big videos get fewer (normal: strangers watch)"
-
 @app.get("/api/patterns")
 def patterns():
     _, pat = mods()
@@ -165,7 +152,7 @@ def patterns():
     return clean({
         "top_count": int(pat.top.sum()), "other_count": int((~pat.top).sum()),
         "differences": [{"what": pat.NAMES[c], "top": g.loc[True, c], "other": g.loc[False, c],
-                         "meaning": verdict(c, pat.corr(v[c], views))} for c in pat.cols],
+                         "meaning": pat.verdict(c, pat.corr(v[c], views))} for c in pat.cols],
         "followers": rows(pd.DataFrame({"title": f["title"], "posted": day(f["Post time"]), "views": f["Total views"],
                                         "followers_per_1k": f["followers_per_1k_views"]})
                           .sort_values("followers_per_1k", ascending=False)),

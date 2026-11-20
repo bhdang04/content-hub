@@ -20,6 +20,26 @@ def corr(x, y):
     """Spearman rank correlation without needing scipy."""
     return x.rank().corr(y.rank())
 
+TESTABLE = {"caption_len", "hashtags"}  # you set these directly; rates are outcomes
+
+def bucket(c):
+    """Rank correlation -> act on it, test it, or skip it. One rule for recommend.py and the dashboard."""
+    if pd.isna(c) or abs(c) < 0.2:
+        return "skip"
+    return "act" if abs(c) >= 0.4 else "test"
+
+def verdict(col, c):
+    """Rank correlation -> what it means, in words (dashboard Patterns page)."""
+    b = bucket(c)
+    if b == "skip":
+        return "No real difference"
+    sure = "Clear sign" if b == "act" else "Maybe"
+    if col in TESTABLE:
+        return f"{sure}: {'more' if c > 0 else 'less'} of this went with more views" + ("" if b == "act" else " (test it)")
+    if c > 0:
+        return f"{sure}: big videos get more of these. Aim for it."
+    return f"{sure}: big videos get fewer (normal: strangers watch)"
+
 def link(x, y):
     """Rank correlation in plain words."""
     c = corr(x, y)
@@ -31,6 +51,9 @@ _t = compare(pd.Series([10, 10, 1, 1]), pd.Series([True, True, False, False]), "
 assert "10.0x MORE" in _t and "n=2" in _t, _t
 assert compare(pd.Series([1, 2, 3]), pd.Series([True, False, False]), "x") is None
 assert link(pd.Series([1, 2, 3]), pd.Series([1, 2, 3])).startswith("+1.00 higher goes with more views")
+assert [bucket(x) for x in (0.5, -0.45, 0.3, -0.25, 0.1, float("nan"))] == ["act", "act", "test", "test", "skip", "skip"]
+assert verdict("hashtags", 0.3) == "Maybe: more of this went with more views (test it)"
+assert verdict("shares_per_1k", -0.5).startswith("Clear sign: big videos get fewer")
 
 def split_followers(post_times, views, gain, days=3):
     """Credit each day's follower gain to videos posted in the `days` days up to it, split by views,

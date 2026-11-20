@@ -4,7 +4,7 @@ Rules read the numbers each run; nothing is hardcoded to one export."""
 import json, os
 import pandas as pd
 from data import act, fol, END
-from patterns import v, views, tags, top, corr, NAMES
+from patterns import v, views, tags, top, corr, NAMES, TESTABLE, bucket
 
 # column -> (what to do if more goes with more views, what to do if less does; None = don't advise)
 LEVERS = {
@@ -14,15 +14,6 @@ LEVERS = {
     "comments_per_1k": ("Give people a reason to comment: ask a question in the caption", None),
     "shares_per_1k": ("Make videos people want to send to a friend: tag-a-friend dances, duets, 'you vs me' hooks", None),
 }
-TESTABLE = {"caption_len", "hashtags"}  # you set these directly; rates are outcomes
-
-def bucket(c):
-    """Rank correlation -> act on it, test it, or skip it."""
-    if pd.isna(c) or abs(c) < 0.2:
-        return "skip"
-    return "act" if abs(c) >= 0.4 else "test"
-
-assert [bucket(x) for x in (0.5, -0.45, 0.3, -0.25, 0.1, float("nan"))] == ["act", "act", "test", "test", "skip", "skip"]
 
 post, improve, test = [], [], []
 med = lambda s: s.median()
@@ -41,7 +32,8 @@ post.append("Do a part 2 or a new take on your biggest hits: " + "; ".join(
 hours = act.groupby("Hour")["Active followers"].mean().nlargest(3).index.sort_values()
 day = act.groupby(act["Date"].dt.day_name())["Active followers"].mean().idxmax()
 # shortcut: activity is one week only; re-check with each new export
-post.append(f"Post around {hours[0]}:00-{hours[-1] + 1}:00. That's when most of your followers are on TikTok. "
+at = [f"{h}:00" for h in hours]  # listed, not a range: the busiest hours can be far apart (9, 13, 20)
+post.append(f"Post at {', '.join(at[:-1])} or {at[-1]}. That's when most of your followers are on TikTok. "
             f"{day} is their busiest day.")
 quiet = (fol["Date"].max() - v["Post time"].max()).days
 if quiet > 14:
