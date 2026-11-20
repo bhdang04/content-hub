@@ -1,7 +1,8 @@
 """Step 4: find what goes with more views, explain it in plain English.
 Run: python3 src/patterns.py
-Small sample (15 videos): every finding is a hint to test, not proof.
-Exports have no post hour or video length, so those are not checked."""
+Uses Studio per-post data (data/hub.db, ~60 posts, ads left out) when it exists, else the Content
+exports (~15 top videos). Small sample either way: every finding is a hint to test, not proof.
+Post hour and video length are not checked."""
 import json, os, sqlite3
 import pandas as pd
 from data import videos, fol

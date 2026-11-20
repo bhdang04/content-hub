@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type Post, type Video, num, since, useApi } from "../api";
+import { type Post, type Video, num, useApi } from "../api";
 import { Card, Loading, Table } from "../ui";
 
 export default function VideosPage({ version }: { version: number }) {
@@ -24,8 +24,7 @@ export default function VideosPage({ version }: { version: number }) {
         {studio.data && (
           <Table rows={studio.data} cols={[
             { head: "Video", cell: (p) => <a href={`#video/${p.video_id}`} className="hover:underline">{p.title || "(no caption)"}{p.is_ad ? " (ad)" : ""}</a> },
-            { head: "Posted", cell: (p) => p.posted },
-            { head: "Since last post", right: true, cell: (p) => (p.gap_days == null ? "–" : since(p.gap_days)) },
+            { head: "Posted", cell: (p) => <span className="whitespace-nowrap">{p.posted}</span> },
             { head: "Views", right: true, cell: (p) => num(p.views) },
             { head: "Still watching at 3s", right: true, cell: (p) => pct(p.kept_3s) },
             { head: "Watched to the end", right: true, cell: (p) => pct(p.full_watch_rate) },

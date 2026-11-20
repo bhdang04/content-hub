@@ -175,7 +175,7 @@ function OpeningsCard({ version }: { version: number }) {
     <ul className="text-sm">
       {ps.map((p) => (
         <li key={p.video_id} className="flex justify-between gap-3 py-1.5 border-b border-grid last:border-0">
-          <a href={`#video/${p.video_id}`} className="hover:underline truncate">{p.title || "(no caption)"}</a>
+          <a href={`#video/${p.video_id}`} className="hover:underline min-w-0 break-words">{p.title || "(no caption)"}</a>
           <span className="text-muted tabular-nums">{Math.round(p.kept_3s! * 100)}%</span>
         </li>
       ))}
@@ -184,8 +184,8 @@ function OpeningsCard({ version }: { version: number }) {
   return (
     <Card title="Openings that worked" sub="Share of viewers still watching at 3s. Watch the top ones before you film.">
       <div className="grid sm:grid-cols-2 gap-4">
-        <div><p className="text-good text-sm mb-1">Best 3</p>{list(ranked.slice(0, 3))}</div>
-        <div><p className="text-bad-text text-sm mb-1">Worst 3</p>{list(ranked.slice(-3).reverse())}</div>
+        <div className="min-w-0"><p className="text-good text-sm mb-1">Best 3</p>{list(ranked.slice(0, 3))}</div>
+        <div className="min-w-0"><p className="text-bad-text text-sm mb-1">Worst 3</p>{list(ranked.slice(-3).reverse())}</div>
       </div>
     </Card>
   );

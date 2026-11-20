@@ -45,7 +45,7 @@ export type Patterns = {
   top_count: number;
   other_count: number;
   differences: { what: string; top: number | null; other: number | null; meaning: string }[];
-  followers: { title: string; posted: string; views: number; followers_per_1k: number }[];
+  followers: { video_id: string; title: string; posted: string; views: number; followers_per_1k: number }[];
 };
 
 /** GET /api/<path>. Refetches when `version` changes (after an upload). */
