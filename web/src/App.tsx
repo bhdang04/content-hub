@@ -2,16 +2,19 @@ import { useEffect, useState } from "react";
 import HomePage from "./pages/Home";
 import VideosPage from "./pages/Videos";
 import PatternsPage from "./pages/Patterns";
+import VideoPage from "./pages/Video";
 
 const PAGES = { home: "Home", videos: "Videos", patterns: "Patterns" } as const;
 type Page = keyof typeof PAGES;
 const fromHash = (): Page => (location.hash.slice(1) in PAGES ? (location.hash.slice(1) as Page) : "home");
+const videoId = () => location.hash.match(/^#video\/(\d+)$/)?.[1]; // #video/<id> = one video's detail page
 
 export default function App() {
   const [page, setPage] = useState<Page>(fromHash);
+  const [video, setVideo] = useState(videoId);
   const [version, setVersion] = useState(0); // bumps after an upload so every page refetches
   useEffect(() => {
-    const on = () => setPage(fromHash());
+    const on = () => { setPage(fromHash()); setVideo(videoId()); scrollTo(0, 0); };
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
@@ -22,15 +25,16 @@ export default function App() {
         <div className="text-xl font-bold mr-4 md:mr-0 md:mb-4">Content Hub</div>
         {(Object.keys(PAGES) as Page[]).map((p) => (
           <a key={p} href={`#${p}`}
-             className={`rounded-lg px-3 py-2 text-sm ${page === p ? "bg-card text-text" : "text-muted hover:text-text"}`}>
+             className={`rounded-lg px-3 py-2 text-sm ${(video ? p === "videos" : page === p) ? "bg-card text-text" : "text-muted hover:text-text"}`}>
             {PAGES[p]}
           </a>
         ))}
       </nav>
       <main className="flex-1 min-w-0 px-4 pb-10 md:p-8 max-w-[1400px]">
-        {page === "home" && <HomePage version={version} onUploaded={() => setVersion((v) => v + 1)} />}
-        {page === "videos" && <VideosPage version={version} />}
-        {page === "patterns" && <PatternsPage version={version} />}
+        {video && <VideoPage id={video} version={version} />}
+        {!video && page === "home" && <HomePage version={version} onUploaded={() => setVersion((v) => v + 1)} />}
+        {!video && page === "videos" && <VideosPage version={version} />}
+        {!video && page === "patterns" && <PatternsPage version={version} />}
       </main>
     </div>
   );

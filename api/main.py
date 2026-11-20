@@ -1,7 +1,7 @@
 """Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
 Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
 Localhost only; your data is not sent anywhere."""
-import io, json, os, re, subprocess, sys, threading, zipfile
+import io, json, os, re, sqlite3, subprocess, sys, threading, zipfile
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -157,6 +157,75 @@ def patterns():
                                         "followers_per_1k": f["followers_per_1k_views"]})
                           .sort_values("followers_per_1k", ascending=False)),
     })
+
+# ---------- Studio per-post data (data/hub.db, filled by ./run.sh import) ----------
+NUMS = ["views", "likes", "comments", "shares", "saves", "avg_watch_s", "full_watch_rate", "kept_3s", "new_followers"]
+
+def drop_second(r):
+    """Second where the most viewers left (biggest one-second fall). Matches Studio's 'stopped watching at 0:0X'."""
+    if len(r) < 2:
+        return None
+    return max(range(1, len(r)), key=lambda i: r[i - 1] - r[i])
+
+def studio():
+    db = ROOT / "data" / "hub.db"
+    if not db.exists():
+        raise HTTPException(409, "No Studio data yet. Ask Claude to read Studio, then run ./run.sh import.")
+    con = sqlite3.connect(db)
+    try:
+        df = pd.read_sql("SELECT * FROM posts", con)
+    finally:
+        con.close()
+    df["retention"] = df.pop("retention_json").map(json.loads)
+    df["search_terms"] = df.pop("search_terms_json").map(json.loads)
+    df["drop_second"] = df["retention"].map(drop_second)
+    df["kept_3s"] = df["retention"].map(lambda r: r[3] if len(r) > 3 else None)
+    df["posted"] = pd.to_datetime(df["posted_at"], unit="s", utc=True).dt.tz_convert("America/Los_Angeles").dt.strftime("%Y-%m-%d")
+    df = df.sort_values("posted_at")
+    df["gap_days"] = df["posted_at"].diff() / 86400  # ads count: they're still a post in the feed
+    return df.iloc[::-1]
+
+def opening_advice(p, u, usual_len):
+    """Plain 'what to do' lines for one video. 5-point cutoff: smaller gaps are mostly chance."""
+    k, uk = p.get("kept_3s"), u.get("kept_3s")
+    if k is None or uk is None:
+        return []
+    pc = lambda x: f"{round(x * 100)}%"
+    if k >= uk + 0.05:
+        out = [f"Strong opening: {pc(k)} still watching at 3s (your usual: {pc(uk)}). Reuse this opening."]
+    elif k <= uk - 0.05:
+        return [f"Weak opening: only {pc(k)} still watching at 3s (your usual: {pc(uk)}). Start on your best move in the first second."]
+    else:
+        out = [f"Normal opening ({pc(k)} still watching at 3s)."]
+    if p["full_watch_rate"] <= u["full_watch_rate"] - 0.05:
+        out.append(f"People stayed for the start but left before the end. Try a shorter cut (your usual length: {round(usual_len)}s).")
+    return out
+
+assert opening_advice({"kept_3s": .30, "full_watch_rate": 0}, {"kept_3s": .41, "full_watch_rate": .1}, 15)[0].startswith("Weak")
+assert len(opening_advice({"kept_3s": .52, "full_watch_rate": .02}, {"kept_3s": .41, "full_watch_rate": .1}, 15)) == 2
+assert opening_advice({"kept_3s": .43, "full_watch_rate": .1}, {"kept_3s": .41, "full_watch_rate": .1}, 15) == ["Normal opening (43% still watching at 3s)."]
+
+@app.get("/api/posts")
+def posts():
+    df = studio()
+    return rows(df[["video_id", "posted", "title", "length_s", "is_ad", "drop_second", "gap_days", *NUMS]])
+
+@app.get("/api/posts/{video_id}")
+def post(video_id: str):
+    if not video_id.isdigit():
+        raise HTTPException(400, "bad video id")
+    df = studio()
+    hit = df[df["video_id"] == video_id]
+    if hit.empty:
+        raise HTTPException(404, "That video isn't in the Studio data. Run a new Studio read, then ./run.sh import.")
+    p = rows(hit)[0]
+    base = df[df["is_ad"] == 0]  # ads get paid traffic; they'd skew "your usual"
+    ret = pd.DataFrame(base["retention"].tolist())  # one column per second; shorter videos leave gaps
+    p["usual"] = clean(base[NUMS].median().to_dict())
+    p["usual_retention"] = clean(ret.median().iloc[:len(p["retention"])].round(3).tolist())
+    p["usual_from"] = len(base)
+    p["advice"] = opening_advice(p, p["usual"], base["length_s"].median())
+    return p
 
 # ---------- upload ----------
 KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}

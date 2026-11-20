@@ -27,6 +27,20 @@ export type Video = {
   title: string; posted: string; views: number; likes: number; comments: number; shares: number;
   engagement_pct: number | null; link: string;
 };
+// Studio per-post data (data/hub.db)
+type PostNums = {
+  views: number; likes: number; comments: number; shares: number; saves: number;
+  avg_watch_s: number; full_watch_rate: number; kept_3s: number | null; new_followers: number | null;
+};
+export type Post = PostNums & {
+  video_id: string; posted: string; title: string; length_s: number; is_ad: number; drop_second: number | null; gap_days: number | null;
+};
+export type PostDetail = Post & {
+  pct_for_you: number | null; pct_search: number | null; pct_profile: number | null;
+  pct_following: number | null; pct_other: number | null;
+  retention: number[]; search_terms: [string, number][];
+  usual: PostNums; usual_retention: number[]; usual_from: number; advice: string[];
+};
 export type Patterns = {
   top_count: number;
   other_count: number;
@@ -57,4 +71,6 @@ export function useApi<T>(path: string, version = 0) {
 
 export const short = (n: number) =>
   Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : Math.abs(n) >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0);
+/** Time since the previous post, e.g. "9 hours" or "2.5 days". */
+export const since = (d: number) => (d < 1 ? `${Math.round(d * 24)} hours` : `${d.toFixed(1)} days`);
 export const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });

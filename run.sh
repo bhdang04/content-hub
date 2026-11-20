@@ -6,13 +6,15 @@
 #   ./run.sh recommend    refresh the advice (what to post, fix, try)
 #   ./run.sh track        did the last advice work? (uses the past-7-days export)
 #   ./run.sh check        self-check the dashboard's safety rules (writes nothing)
+#   ./run.sh import       load Studio per-post reads (data/raw/studio/) into data/hub.db
 set -e
 cd "$(dirname "$0")"
 case "${1:-}" in
   plan|analyze|recommend|track) exec python3 "src/$1.py" "${@:2}" ;;
   check) exec python3 api/check.py ;;
+  import) exec python3 src/studio_import.py ;;
   "") ;;
-  *) sed -n '2,8p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 python3 -m uvicorn api.main:app --host 127.0.0.1 --port 8000 &

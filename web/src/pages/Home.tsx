@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { type Home, type Track, num, short, useApi } from "../api";
+import { type Home, type Post, type Track, num, short, useApi } from "../api";
 import { Badge, Card, Kpi, Loading, RecList } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
@@ -68,6 +68,7 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
             </div>
           </div>
 
+          <OpeningsCard version={version} />
           <TrackCard version={version} />
         </div>
 
@@ -162,5 +163,30 @@ function Upload({ onUploaded }: { onUploaded: () => void }) {
       {msgs.map((m) => <p key={m.text} className={m.ok ? "text-good" : "text-bad-text"}>{m.text}</p>)}
       <p className="text-muted text-xs">Saved on this Mac only, in git-ignored data/raw/.</p>
     </div>
+  );
+}
+
+/** Best and worst openings from the Studio data. Hidden until Studio data exists. */
+function OpeningsCard({ version }: { version: number }) {
+  const { data } = useApi<Post[]>("posts", version);
+  const ranked = (data ?? []).filter((p) => !p.is_ad && p.kept_3s != null).sort((a, b) => b.kept_3s! - a.kept_3s!);
+  if (ranked.length < 6) return null;
+  const list = (ps: Post[]) => (
+    <ul className="text-sm">
+      {ps.map((p) => (
+        <li key={p.video_id} className="flex justify-between gap-3 py-1.5 border-b border-grid last:border-0">
+          <a href={`#video/${p.video_id}`} className="hover:underline truncate">{p.title || "(no caption)"}</a>
+          <span className="text-muted tabular-nums">{Math.round(p.kept_3s! * 100)}%</span>
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <Card title="Openings that worked" sub="Share of viewers still watching at 3s. Watch the top ones before you film.">
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div><p className="text-good text-sm mb-1">Best 3</p>{list(ranked.slice(0, 3))}</div>
+        <div><p className="text-bad-text text-sm mb-1">Worst 3</p>{list(ranked.slice(-3).reverse())}</div>
+      </div>
+    </Card>
   );
 }
