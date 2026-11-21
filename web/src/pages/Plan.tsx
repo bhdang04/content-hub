@@ -72,6 +72,11 @@ export default function PlanPage({ version }: { version: number }) {
                 );
               })}
             </div>
+            {p.backups.some((b) => b.date === d.date) && (
+              <p className="text-muted text-xs mt-2 break-words">
+                Backups: {p.backups.filter((b) => b.date === d.date).map((b) => b.name).join("; ")}
+              </p>
+            )}
           </div>
         ))}
       </div>

@@ -231,6 +231,8 @@ def post(video_id: str):
 SCHEMAS = [
     "CREATE TABLE IF NOT EXISTS plan (date TEXT, slot INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, slot))",
     "CREATE TABLE IF NOT EXISTS shortlist (dance_key TEXT PRIMARY KEY, label TEXT, added_at INTEGER)",
+    # backup dances per day, picked by the weekly planner (./run.sh plan); refilled each run
+    "CREATE TABLE IF NOT EXISTS backups (date TEXT, rank INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, rank))",
     # every Home swipe and why: read by Claude in the weekly trends read; later, ranking
     "CREATE TABLE IF NOT EXISTS swipes (dance_key TEXT PRIMARY KEY, music_id TEXT, video_id TEXT, label TEXT, decision TEXT, reason TEXT, at INTEGER, credit TEXT, author TEXT)",
     "CREATE TABLE IF NOT EXISTS trending (video_id TEXT, author TEXT, caption TEXT, music_id TEXT, music_title TEXT, music_author TEXT, views TEXT, likes TEXT, saves TEXT, posted_at TEXT, tag TEXT)",
@@ -272,6 +274,7 @@ def plan():
         ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
         liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
         comp = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
+        backups = pd.read_sql("SELECT date, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
     finally:
         con.close()
     posted = df["posted"].value_counts()
@@ -294,6 +297,7 @@ def plan():
         "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
         "ideas": want,
         "planned": rows(planned),
+        "backups": rows(backups),
         "shortlist": rows(short.assign(planned=short["key"].isin(planned["key"]))),
         "dances": rows(d.sort_values("best_views", ascending=False)),
     })
@@ -323,6 +327,48 @@ async def plan_put(day: str, slot: int, request: Request):
 def plan_delete(day: str, slot: int):
     _slot(day, slot)
     return plan_write("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+
+@app.post("/api/plan/fill")
+def plan_fill():
+    """Fill next week's empty slots (3 a day) + 2 backups a day. Order: your list, ✓ Trending, Saved, Competitor,
+    then remakes of your best dances not posted in the last 14 days. Never touches a slot you filled."""
+    from planner import fill, next_week
+    p, days = plan(), next_week()
+    cut = time.time() - 14 * 86400
+    named = lambda i: i | {"label": f"{i['label']}, dc {i['credit']}" if i["credit"] else i["label"]}  # same song, other dance
+    picks = ([s for s in p["shortlist"] if not s["planned"]] + [named(i) for i in p["ideas"] if not i["done"] and not i["planned"]]
+             + [d for d in p["dances"] if d["last_posted"] < cut])
+    new, extra = fill(days, {(x["date"], x["slot"]): x["key"] for x in p["planned"]}, picks)
+    con = plan_db()
+    try:
+        with con:
+            con.executemany("INSERT INTO plan VALUES (?, ?, ?, ?)", new)
+            con.execute(f"DELETE FROM backups WHERE date IN ({','.join('?' * len(days))})", days)
+            con.executemany("INSERT INTO backups VALUES (?, ?, ?, ?)",
+                            [(d, i, b["key"], b["label"]) for d, bs in extra.items() for i, b in enumerate(bs)])
+    finally:
+        con.close()
+    return {"added": len(new), "days": days}
+
+@app.get("/api/weekly")
+def weekly():
+    """The weekly email text: this week's results + next week's plan."""
+    from planner import email, next_week
+    p, days = plan(), next_week()
+    week = [str(date.fromisoformat(d) - pd.Timedelta(days=7)) for d in days]  # this Mon..Sun
+    df = studio()
+    w = df[(df["is_ad"] == 0) & df["posted"].isin(week)]
+    best = w.sort_values("views").iloc[-1] if len(w) else None
+    results = {"from": week[0], "to": week[-1], "posts": len(w), "days_posted": w["posted"].nunique(),
+               "views": int(w["views"].sum()), "new_followers": int(w["new_followers"].fillna(0).sum()),
+               "best_title": re.split(r"[#|]", best["title"])[0].strip() if best is not None else "", "best_views": int(best["views"]) if best is not None else 0}
+    planned = {}
+    for x in p["planned"]:
+        planned.setdefault(x["date"], []).append(x)
+    extra = {}
+    for b in p["backups"]:
+        extra.setdefault(b["date"], []).append({"label": b["name"]})
+    return {"text": email(days, planned, extra, results)}
 
 @app.post("/api/shortlist")
 async def shortlist_add(request: Request):

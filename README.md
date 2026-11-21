@@ -54,7 +54,7 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 5. Competitors page (adds Competitor): accounts + their last ~5 hits typed in by hand (link, views, likes, comments, shares, caption, song, format); "their 2-person videos get 3x views" lines; their posts show in Plan's "Dances I want to do". "You post 2-person X%" skipped: your posts have no format yet. Built Nov 20.
 6. Inbox + auto-import: iCloud Drive `Content Hub/inbox` + iOS Shortcuts (share a dance link, save an export); a daily launchd job imports new zips and links (short vm.tiktok.com links expanded, one request each). Plain Python, no AI.
 7. "You click, Claude reads": a weekly quest (~10 min). The Hub's quest page lists the pages to open (each new post's Studio analytics, 1-2 competitor profiles, a dance hashtag); Brian clicks each link, Claude reads that open tab and saves it into data/hub.db; the step ticks off.
-8. Weekly planner + email: fills next week with 1-3 dances a day plus backups per day; emails the plan and last week's results (Gmail).
+8. Weekly planner + email: fills next week with 1-3 dances a day plus backups per day; emails the plan and last week's results (Gmail). Built Nov 20: `./run.sh plan` fills next week's empty slots (3 a day: your list, ✓ Trending, Saved, Competitor, then remakes not posted in 14 days) + 2 backups a day; the weekly-plan skill ("plan my week") puts the email in a Gmail draft.
 9. Learning picker: ranks dances from swipes, reasons and how each posted dance did.
 10. Resume polish: fake-data demo mode, tests + CI, write-up with real follower numbers.
 

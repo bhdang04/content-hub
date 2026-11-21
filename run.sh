@@ -5,6 +5,7 @@
 #   ./run.sh analyze      text report: views, engagement, followers, viewers
 #   ./run.sh recommend    refresh the advice (what to post, fix, try)
 #   ./run.sh track        did the last advice work? (uses the past-7-days export)
+#   ./run.sh plan         fill next week's empty Plan slots + backups, print the weekly email text
 #   ./run.sh check        self-check the dashboard's safety rules (writes nothing)
 #   ./run.sh import       load Studio per-post reads (data/raw/studio/) into data/hub.db
 #   ./run.sh inbox        import new Studio zips from ~/Downloads + phone links (iCloud Content Hub/inbox)
@@ -14,6 +15,7 @@ cd "$(dirname "$0")"
 case "${1:-}" in
   analyze|recommend|track) exec python3 "src/$1.py" "${@:2}" ;;
   check) exec python3 api/check.py ;;
+  plan) exec python3 api/weekly.py ;;
   import) exec python3 src/studio_import.py ;;
   inbox) exec python3 src/inbox.py ;;
   inbox-on|inbox-off)
@@ -37,7 +39,7 @@ PLIST_END
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
   ""|phone) ;;
-  *) sed -n '2,11p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 python3 -m uvicorn api.main:app --host 127.0.0.1 --port 8000 &
