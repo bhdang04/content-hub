@@ -65,12 +65,16 @@ def steps(con):
         for r in prof["posts"]:
             p = dict(zip(prof["cols"], r))
             # read each post once, after 3 days: most of its views are in by then
-            if p["video_id"] not in read and now - p["posted_at"] > 3 * 86400:
+            # read this week: keep the step so it shows ticked instead of vanishing
+            if (p["video_id"] not in read and now - p["posted_at"] > 3 * 86400) or f"studio:{p['video_id']}" in done:
                 out.append({"step": f"studio:{p['video_id']}", "label": f"Analytics: {p['caption'][:50] or '(no caption)'}",
                             "why": "watch time, retention, traffic", "url": STUDIO.format(p["video_id"])})
-    comp = con.execute("SELECT handle FROM competitors ORDER BY COALESCE(read_at, 0), added_at LIMIT 2").fetchall()
+    # 2 a week, longest unread first; ones read this week stay (ticked) even after reading moves them to the back
+    handles = [h for (h,) in con.execute("SELECT handle FROM competitors ORDER BY COALESCE(read_at, 0), added_at")]
+    seen = [h for h in handles if f"competitor:{h}" in done]
+    comp = seen + [h for h in handles if h not in seen][:max(0, 2 - len(seen))]
     out += [{"step": f"competitor:{h}", "label": f"@{h}", "why": "their top hits this month",
-             "url": f"https://www.tiktok.com/@{h}"} for (h,) in comp]
+             "url": f"https://www.tiktok.com/@{h}"} for h in comp]
     tag = TAGS[int(wk[-2:]) % len(TAGS)]
     out.append({"step": f"tag:{tag}", "label": f"#{tag}", "why": "trending dances for Home",
                 "url": f"https://www.tiktok.com/tag/{tag}"})
