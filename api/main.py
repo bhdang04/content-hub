@@ -1,7 +1,7 @@
 """Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
 Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
 Localhost only; your data is not sent anywhere."""
-import json, os, re, sqlite3, subprocess, sys, threading, time
+import html, json, os, re, sqlite3, subprocess, sys, threading, time
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -342,12 +342,16 @@ async def _dance(request: Request):
 @app.put("/api/plan/{day}/{slot}")
 async def plan_put(day: str, slot: int, request: Request):
     _slot(day, slot)
-    return plan_write("INSERT OR REPLACE INTO plan VALUES (?, ?, ?, ?)", (day, slot, *await _dance(request)))
+    r = plan_write("INSERT OR REPLACE INTO plan VALUES (?, ?, ?, ?)", (day, slot, *await _dance(request)))
+    phone_plan()
+    return r
 
 @app.delete("/api/plan/{day}/{slot}")
 def plan_delete(day: str, slot: int):
     _slot(day, slot)
-    return plan_write("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+    r = plan_write("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+    phone_plan()
+    return r
 
 # a spot on the calendar: a day's slot (plan) or a day's backup (backups); table/column names come only from here
 SPOTS = {"plan": ("plan", "slot", 2), "backup": ("backups", "rank", 9)}
@@ -380,7 +384,48 @@ async def plan_move(request: Request):
                 con.execute(f"INSERT INTO {src[0]} VALUES (?, ?, ?, ?)", (*src[2:], *b))
     finally:
         con.close()
+    phone_plan()
     return {"ok": True}
+
+def phone_plan():
+    """Read-only copy of the plan for your phone, so the Mac can be off: iCloud Drive/Content Hub/plan.html.
+    Rewritten after every plan change. Demo mode writes demo/data/plan.html instead, never iCloud."""
+    from inbox import INBOX
+    try:
+        p, e = plan(), html.escape
+        done = {d["key"]: d["times"] for d in p["dances"]}
+        def item(x):
+            name = e(x["name"])
+            if x.get("video_id"):
+                name = f'<a href="https://www.tiktok.com/video/{e(x["video_id"])}">{name}</a>'
+            tag = f'<span class="done">Done {done[x["key"]]}x</span>' if x["key"] in done else '<span class="learn">Learn</span>'
+            return f"<li>{name} {tag}" + (f"<small>{e(x['why'])}</small>" if x.get("why") else "") + "</li>"
+        days = ""
+        for d in p["days"]:
+            day = sorted((x for x in p["planned"] if x["date"] == d["date"]), key=lambda x: x["slot"])
+            bak = [x for x in p["backups"] if x["date"] == d["date"]]
+            if day or bak:
+                label = pd.Timestamp(d["date"]).strftime("%a %b %-d")
+                days += (f"<section><h2>{label}</h2><ol>{''.join(map(item, day))}</ol>"
+                         + (f"<h3>Backups</h3><ul>{''.join(map(item, bak))}</ul>" if bak else "") + "</section>")
+        page = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plan</title><style>
+:root{{color-scheme:light dark;--bg:#fff;--fg:#111;--muted:#666;--card:#f3f3f5;--good:#0a7f5a}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#0b0b0d;--fg:#eee;--muted:#999;--card:#18181b;--good:#3ddc97}}}}
+body{{background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,system-ui,sans-serif;margin:0;padding:16px}}
+section{{background:var(--card);border-radius:12px;padding:12px 16px;margin:12px 0}}
+h1{{margin:0}}h2{{margin:0 0 6px;font-size:18px}}h3{{margin:10px 0 4px;font-size:14px;color:var(--muted)}}
+ol,ul{{margin:0;padding-left:20px}}li{{margin:6px 0;overflow-wrap:anywhere}}a{{color:inherit}}
+small{{display:block;color:var(--muted);font-size:13px}}.done{{color:var(--muted);font-size:13px}}
+.learn{{color:var(--good);font-weight:700;font-size:13px}}p{{color:var(--muted)}}
+</style></head><body><h1>Plan</h1><p>Updated {time.strftime("%b %-d, %-I:%M %p")}. Read-only: change it on the Mac.</p>
+{days or "<p>Nothing planned yet.</p>"}</body></html>"""
+        out = (INBOX.parent if BASE == ROOT and INBOX.parent.is_dir() else BASE / "data") / "plan.html"
+        tmp = out.with_suffix(".tmp")
+        tmp.write_text(page, encoding="utf-8")
+        os.replace(tmp, out)  # whole file at once, so iCloud never syncs half a page
+    except Exception as err:  # the plan change is already saved; only the phone copy is late
+        print(f"Phone plan not written: {err}", file=sys.stderr)
 
 @app.post("/api/plan/fill")
 def plan_fill():
@@ -406,6 +451,7 @@ def plan_fill():
                             [(d, i, b["key"], b["label"]) for d, bs in extra.items() for i, b in enumerate(bs)])
     finally:
         con.close()
+    phone_plan()
     return {"added": len(added), "days": days}
 
 @app.get("/api/weekly")
