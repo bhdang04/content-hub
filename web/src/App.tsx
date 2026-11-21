@@ -25,7 +25,7 @@ export default function App() {
 
   return (
     <div className="md:flex min-h-screen">
-      <nav className="md:w-52 shrink-0 p-4 md:p-6 flex md:flex-col gap-1 items-center md:items-stretch">
+      <nav className="md:w-52 shrink-0 p-4 md:p-6 flex md:flex-col gap-1 items-center md:items-stretch md:sticky md:top-0 md:self-start md:h-screen md:overflow-y-auto">
         <div className="text-xl font-bold mr-4 md:mr-0 md:mb-4">Content Hub</div>
         {(Object.keys(PAGES) as Page[]).map((p) => (
           <a key={p} href={`#${p}`}

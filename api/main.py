@@ -293,6 +293,9 @@ def plan():
     for w in want:
         w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
         w["planned"] = w["key"] in set(planned["key"])
+    # a video to record from: your best take for a dance you've done, else the idea's video
+    vid = {w["key"]: w["video_id"] for w in want} | dict(zip(d["key"], d.get("best_video_id", [])))
+    planned["video_id"], backups["video_id"] = planned["key"].map(vid), backups["key"].map(vid)
     return clean({
         "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
         "ideas": want,
@@ -354,9 +357,8 @@ def plan_fill():
 
 @app.get("/api/weekly")
 def weekly():
-    """The weekly email text: this week's results + next week's plan, with a TikTok link per dance."""
+    """The weekly email text: this week's results + how much of next week is planned."""
     from planner import email, next_week
-    from quest import me
     p, days = plan(), next_week()
     week = [str(date.fromisoformat(d) - pd.Timedelta(days=7)) for d in days]  # this Mon..Sun
     df = studio()
@@ -365,15 +367,7 @@ def weekly():
     results = {"from": week[0], "to": week[-1], "posts": len(w), "days_posted": w["posted"].nunique(),
                "views": int(w["views"].sum()), "new_followers": int(w["new_followers"].fillna(0).sum()),
                "best_title": re.split(r"[#|]", best["title"])[0].strip() if best is not None else "", "best_views": int(best["views"]) if best is not None else 0}
-    planned, extra = {}, {}
-    for x in p["planned"]:
-        planned.setdefault(x["date"], []).append(x)
-    for b in p["backups"]:
-        extra.setdefault(b["date"], []).append(b)
-    video = "https://www.tiktok.com/@{}/video/{}"
-    links = {i["key"]: video.format(i["author"], i["video_id"]) for i in p["ideas"] if i["video_id"] and i["author"]}
-    links |= {d["key"]: video.format(me(), d["best_video_id"]) for d in p["dances"]}  # a refilm links to your best take
-    return {"text": email(days, planned, extra, results, links, {d["key"] for d in p["dances"]})}
+    return {"text": email(days, p["planned"], results, {d["key"] for d in p["dances"]})}
 
 @app.post("/api/shortlist")
 async def shortlist_add(request: Request):

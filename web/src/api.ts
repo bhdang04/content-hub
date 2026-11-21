@@ -46,8 +46,8 @@ export type Dance = {
 };
 export type Plan = {
   days: { date: string; posted: number }[];
-  planned: { date: string; slot: number; key: string; name: string }[];
-  backups: { date: string; key: string; name: string }[]; // weekly planner's spare dances per day (./run.sh plan)
+  planned: { date: string; slot: number; key: string; name: string; video_id: string | null }[];
+  backups: { date: string; key: string; name: string; video_id: string | null }[]; // weekly planner's spare dances per day (./run.sh plan)
   shortlist: { key: string; label: string; planned: boolean }[];
   // "Tiktok Dances to Do" Favorites, named by song; done = times you've posted the same dance
   ideas: { key: string; label: string; credit: string; video_id: string; author: string; done: number; planned: boolean; source: "Trending" | "Saved" | "Competitor" }[];

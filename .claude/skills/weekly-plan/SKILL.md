@@ -8,7 +8,7 @@ description: Fill next week's Content Hub plan and put the weekly email (this we
 Rule: make a Gmail draft only. Never send it; Brian sends it himself.
 
 1. Run `./run.sh plan`. It fills next week's empty Plan slots (1 new dance + 2 refilms a day)
-   and 2 backups a day (1 new, 1 refilm), each with its TikTok link, and never
+   and 2 backups a day (1 new, 1 refilm), and never
    touches a slot Brian filled. It prints "Added N dances" and then the email text.
    If it fails with "No Studio data yet", tell Brian to do the weekly quest first.
 2. Make a Gmail draft with `create_draft`:

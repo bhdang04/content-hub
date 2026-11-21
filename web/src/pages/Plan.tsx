@@ -11,6 +11,7 @@ export default function PlanPage({ version }: { version: number }) {
   const [picked, setPicked] = useState<Pick | null>(null);
   const [saveError, setSaveError] = useState("");
   const [at_, setAt] = useState(0); // which "want" video the player shows
+  const [preview, setPreview] = useState<{ video_id: string; name: string } | null>(null); // planned dance's reference video
   if (!p) return <Loading error={error} />;
 
   const write = async (path: string, method: string, body?: object) => {
@@ -61,7 +62,9 @@ export default function PlanPage({ version }: { version: number }) {
                 const x = at(d.date, slot);
                 return x ? (
                   <div key={slot} className="text-xs rounded-lg bg-grid p-2 flex justify-between gap-1">
-                    <span className="min-w-0 break-words">{x.name}</span>
+                    {x.video_id
+                      ? <button className="min-w-0 break-words text-left hover:text-good" title="Watch it" onClick={() => setPreview({ video_id: x.video_id!, name: x.name })}>▶ {x.name}</button>
+                      : <span className="min-w-0 break-words">{x.name}</span>}
                     <button aria-label={`Remove ${x.name}`} className="text-muted hover:text-text" onClick={() => write(`plan/${d.date}/${slot}`, "DELETE")}>✕</button>
                   </div>
                 ) : (
@@ -73,9 +76,12 @@ export default function PlanPage({ version }: { version: number }) {
               })}
             </div>
             {p.backups.some((b) => b.date === d.date) && (
-              <p className="text-muted text-xs mt-2 break-words">
-                Backups: {p.backups.filter((b) => b.date === d.date).map((b) => b.name).join("; ")}
-              </p>
+              <div className="text-muted text-xs mt-2 space-y-1">
+                <p>Backups:</p>
+                {p.backups.filter((b) => b.date === d.date).map((b) => b.video_id
+                  ? <button key={b.key} className="block w-full text-left break-words hover:text-good" onClick={() => setPreview({ video_id: b.video_id!, name: b.name })}>▶ {b.name}</button>
+                  : <p key={b.key} className="break-words">{b.name}</p>)}
+              </div>
             )}
           </div>
         ))}
@@ -114,6 +120,14 @@ export default function PlanPage({ version }: { version: number }) {
         </Card>
       </div>
 
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-3 p-4" onClick={() => setPreview(null)}>
+          <iframe key={preview.video_id} src={`https://www.tiktok.com/player/v1/${preview.video_id}?description=0&music_info=0&rel=0&autoplay=1`}
+                  title={preview.name} allow="autoplay; fullscreen" className="h-[80vh] max-w-full aspect-[9/16] rounded-xl bg-grid" onClick={(e) => e.stopPropagation()} />
+          <p className="text-sm text-center break-words max-w-md">{preview.name}</p>
+          <button autoFocus className="rounded-full border border-grid px-4 py-2" onClick={() => setPreview(null)}>Close</button>
+        </div>
+      )}
     </div>
   );
 }

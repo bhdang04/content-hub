@@ -39,10 +39,10 @@ def fill(days, taken, new, old, per_day=3, new_per_day=1):
     return added, extra
 
 
-def email(days, planned, extra, results, links, old_keys):
-    """Plain text: this week's results, then next week's plan with a link to each dance."""
+def email(days, planned, results, old_keys):
+    """Short plain text: this week's results + how much of next week is planned. The dances themselves
+    (with a play button each) are on the Plan page."""
     day = lambda d: date.fromisoformat(d).strftime("%a %b %-d")
-    line = lambda what, key, name: f"  {what}{' (refilm)' if key in old_keys else ' (new)'}: {name}" + (f"\n    {links[key]}" if key in links else "")
     r = results
     out = [f"This week ({day(r['from'])} - {day(r['to'])})"]
     if r["posts"]:
@@ -50,11 +50,10 @@ def email(days, planned, extra, results, links, old_keys):
                 f"- Best: \"{r['best_title']}\" with {r['best_views']:,} views"]
     else:
         out.append("- No posts in the Studio data yet. Do the weekly quest, then run this again.")
-    out += ["", "Next week"]
-    for d in days:
-        out.append(day(d) + ("" if planned.get(d) else ": nothing planned"))
-        out += [line("Dance", x["key"], x["name"]) for x in sorted(planned.get(d, []), key=lambda x: x["slot"])]
-        out += [line("Backup", b["key"], b["name"]) for b in extra.get(d, [])]
+    keys = [x["key"] for x in planned if x["date"] in days]
+    refilms = sum(k in old_keys for k in keys)
+    out.append(f"Next week: {len(keys)} dances planned ({len(keys) - refilms} new, {refilms} refilms). "
+               "Tap any of them on the Plan page to watch it.")
     return "\n".join(out)
 
 
@@ -67,5 +66,5 @@ _add, _ex = fill(["d1", "d2"], {("d2", 0): "b"}, _n, _o, per_day=2)
 assert _add == [("d1", 0, "a", "a"), ("d1", 1, "w", "w"), ("d2", 1, "x", "x")], _add  # d2 already has a new one (b)
 assert _ex == {"d1": [_n[2], _o[2]], "d2": [_n[3], _o[3]]}, _ex
 assert fill(["d1"], {}, [], _o[:1] + _o[:1], per_day=3)[0] == [("d1", 0, "w", "w")]  # out of both: slots stay empty
-assert "(refilm): w\n    L" in email(["2026-11-23"], {"2026-11-23": [{"slot": 0, "key": "w", "name": "w"}]}, {},
-                                    {"from": "2026-11-16", "to": "2026-11-22", "posts": 0}, {"w": "L"}, {"w"})
+assert email(["2026-11-23"], [{"date": "2026-11-23", "key": "w"}, {"date": "2026-11-30", "key": "a"}],
+             {"from": "2026-11-16", "to": "2026-11-22", "posts": 0}, {"w"}).endswith("1 dances planned (0 new, 1 refilms). Tap any of them on the Plan page to watch it.")
