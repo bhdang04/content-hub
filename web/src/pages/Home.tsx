@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { type Home, type Post, type Track, num, short, useApi } from "../api";
+import { type Home, type Post, type Track, type Trend, num, send, short, useApi } from "../api";
 import { Badge, Card, Kpi, Loading, RecList } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
@@ -76,9 +76,7 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
           <Card title="Add new exports" sub="Drop TikTok Studio zips: Content, Overview, Followers, Viewers">
             <Upload onUploaded={onUploaded} />
           </Card>
-          <Card title="Dances to try" sub="Coming later">
-            <p className="text-muted text-sm">Trending dances that fit your style will show here once Trends is built.</p>
-          </Card>
+          <DanceSwipe version={version} />
           <Card title="When your followers are online" sub="Average active followers by day, last 7 days">
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={h.follower_activity} margin={{ left: -10 }}>
@@ -187,6 +185,87 @@ function OpeningsCard({ version }: { version: number }) {
         <div className="min-w-0"><p className="text-good text-sm mb-1">Best 3</p>{list(ranked.slice(0, 3))}</div>
         <div className="min-w-0"><p className="text-bad-text text-sm mb-1">Worst 3</p>{list(ranked.slice(-3).reverse())}</div>
       </div>
+    </Card>
+  );
+}
+
+// a dance shows if any of its trending videos was posted within this many days (the read keeps 30)
+const PERIODS = [{ days: 30, label: "Past month" }, { days: 15, label: "Half month" }, { days: 7, label: "Past week" }, { days: 3, label: "Past 3 days" }];
+const REASONS = ["Not my style", "Too hard / too easy", "Don't like the song"]; // "Don't like the song" must match SONG_REASON in api/main.py
+
+/** One trending dance at a time. ✓ adds it to Plan's "Dances I want to do"; ✕ asks why, so the weekly read can learn. */
+function DanceSwipe({ version }: { version: number }) {
+  const [bump, setBump] = useState(0);
+  const { data, error } = useApi<{ cards: Trend[] }>("trending", version + bump);
+  const [asking, setAsking] = useState(false);
+  const [why, setWhy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [days, setDays] = useState(30);
+  const cards = data?.cards.filter((x) => x.newest_days < days) ?? [];
+  const c = cards[0];
+
+  const swipe = async (decision: "accept" | "decline", reason = "") => {
+    if (!c || busy) return;
+    setBusy(true);
+    const ok = await send("swipe", "POST", { key: c.key, name: c.label, video_id: c.video_id, music_id: c.music_id, decision, reason });
+    setSaveError(ok ? "" : "Couldn't save that. Is the dashboard still running?");
+    if (ok) { setAsking(false); setWhy(""); setBump((b) => b + 1); }
+    setBusy(false);
+  };
+
+  return (
+    <Card title="Dances to try" sub={data ? `Trending on dance hashtags. ${cards.length} left from the ${PERIODS.find((p) => p.days === days)?.label.toLowerCase()}.` : undefined}>
+      {!data && <Loading error={error} />}
+      {data && (
+        <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Posted within">
+          {PERIODS.map((p) => (
+            <button key={p.days} onClick={() => setDays(p.days)} aria-pressed={days === p.days}
+                    className={`rounded-full border px-3 py-1 text-xs ${days === p.days ? "border-good text-good" : "border-grid text-muted"}`}>{p.label}</button>
+          ))}
+        </div>
+      )}
+      {data && !c && <p className="text-muted text-sm">{data.cards.length ? "None this recent. Try a longer time." : "No new trending dances. Ask Claude to read trends, then run ./run.sh import."}</p>}
+      {saveError && <p className="text-bad-text text-sm">{saveError}</p>}
+      {c && (
+        <div className="flex flex-col items-center gap-2">
+          {/* key: a fresh player per card */}
+          <iframe key={c.video_id} src={`https://www.tiktok.com/player/v1/${c.video_id}?description=0&music_info=0&rel=0`}
+                  title={c.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
+          <p className="font-bold text-center break-words">{c.label}</p>
+          <p className="text-muted text-xs text-center break-words">{c.credit ? `dc ${c.credit}` : "no dc credit"} · posted by @{c.author} · {c.days_ago}d ago</p>
+          <div className="grid grid-cols-3 gap-2 w-full text-center text-sm">
+            <div><p className="font-bold">{short(c.views)}</p><p className="text-muted text-xs">views</p></div>
+            <div><p className="font-bold">{short(c.saves)}</p><p className="text-muted text-xs">saves ({c.saves_per_1k} per 1K views)</p></div>
+            <div><p className="font-bold">{c.videos}</p><p className="text-muted text-xs">{c.videos === 1 ? "video" : "videos"} with this dance</p></div>
+          </div>
+          <div className="flex gap-4 mt-1">
+            <button onClick={() => setAsking(true)} disabled={busy} aria-label="Decline"
+                    className="rounded-full border border-bad-text text-bad-text w-14 h-14 text-2xl disabled:opacity-30">✕</button>
+            <button onClick={() => swipe("accept")} disabled={busy} aria-label="Accept: add to Plan"
+                    className="rounded-full border border-good text-good w-14 h-14 text-2xl disabled:opacity-30">✓</button>
+          </div>
+        </div>
+      )}
+      {asking && c && (
+        <div role="dialog" aria-modal="true" aria-label="Why not?" onClick={() => setAsking(false)}
+             onKeyDown={(e) => e.key === "Escape" && setAsking(false)}
+             className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl p-5 w-full max-w-sm space-y-2" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold">Why not this one?</h3>
+            {REASONS.map((r, i) => (
+              <button key={r} autoFocus={i === 0} onClick={() => swipe("decline", r)} disabled={busy}
+                      className="w-full text-left rounded-lg border border-grid hover:border-good px-3 py-2 text-sm">{r}</button>
+            ))}
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (why.trim()) swipe("decline", `Out of my style: ${why.trim()}`); }}>
+              <input value={why} onChange={(e) => setWhy(e.target.value)} maxLength={250} placeholder="Out of my style: why?"
+                     aria-label="Out of my style: why?" className="flex-1 min-w-0 rounded-lg border border-grid bg-transparent px-3 py-2 text-sm" />
+              <button disabled={busy || !why.trim()} className="rounded-lg border border-grid px-3 text-sm disabled:opacity-30">Save</button>
+            </form>
+            <button onClick={() => setAsking(false)} className="text-muted text-sm w-full pt-1">Cancel</button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

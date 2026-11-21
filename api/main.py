@@ -231,12 +231,17 @@ def post(video_id: str):
 SCHEMAS = [
     "CREATE TABLE IF NOT EXISTS plan (date TEXT, slot INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, slot))",
     "CREATE TABLE IF NOT EXISTS shortlist (dance_key TEXT PRIMARY KEY, label TEXT, added_at INTEGER)",
+    # every Home swipe and why: read by Claude in the weekly trends read; later, ranking
+    "CREATE TABLE IF NOT EXISTS swipes (dance_key TEXT PRIMARY KEY, music_id TEXT, video_id TEXT, label TEXT, decision TEXT, reason TEXT, at INTEGER, credit TEXT, author TEXT)",
 ]
 
 def plan_db():
     con = sqlite3.connect(ROOT / "data" / "hub.db")
     for q in SCHEMAS:
         con.execute(q)
+    have = {r[1] for r in con.execute("PRAGMA table_info(swipes)")}
+    for c in {"credit", "author"} - have:  # swipes tables made before these columns
+        con.execute(f"ALTER TABLE swipes ADD COLUMN {c} TEXT")
     return con
 
 def plan_write(sql, args):
@@ -259,6 +264,7 @@ def plan():
         short = pd.read_sql("SELECT dance_key AS key, label FROM shortlist ORDER BY added_at", con)
         has_ideas = con.execute("SELECT 1 FROM sqlite_master WHERE name = 'ideas'").fetchone()
         ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
+        liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
     finally:
         con.close()
     posted = df["posted"].value_counts()
@@ -267,6 +273,9 @@ def plan():
     want = [{"key": dance_key(r.music_id, r.caption, r.author), "label": song(r.music_title, r.music_author),
              "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author}
             for r in ideas.itertuples()]
+    liked = [r | {"credit": r["credit"] or "", "author": r["author"] or ""} for r in rows(liked)]
+    keys = {x["key"] for x in liked}
+    want = liked + [w for w in want if w["key"] not in keys]  # ✓ on Home first, newest first
     for w in want:
         w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
         w["planned"] = w["key"] in set(planned["key"])
@@ -313,6 +322,59 @@ async def shortlist_add(request: Request):
 async def shortlist_remove(request: Request):
     key, _ = await _dance(request)
     return plan_write("DELETE FROM shortlist WHERE dance_key = ?", (key,))
+
+SONG_REASON = "Don't like the song"  # declining with this hides every dance on that sound
+
+@app.get("/api/trending")
+def trending():
+    """Home swipe cards: trending dances (hashtag read) you haven't done, planned, added or swiped. Most total views first."""
+    from dances import dances, dance_key, credit, song
+    df = studio()
+    con = plan_db()
+    try:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'trending'").fetchone():
+            return {"cards": []}
+        t = pd.read_sql("SELECT * FROM trending", con).drop_duplicates("video_id")
+        sw = pd.read_sql("SELECT dance_key, music_id, reason FROM swipes", con)
+        taken = {r[0] for r in con.execute("SELECT dance_key FROM shortlist UNION SELECT dance_key FROM plan")}
+    finally:
+        con.close()
+    done = set(dances(df[df["is_ad"] == 0])["key"]) if "music_id" in df else set()
+    for c in ("views", "likes", "saves", "posted_at"):
+        t[c] = pd.to_numeric(t[c], errors="coerce").fillna(0).astype(int)
+    t["key"] = [dance_key(m, c, a) for m, c, a in zip(t["music_id"], t["caption"], t["author"])]
+    bad_songs = set(sw.loc[sw["reason"] == SONG_REASON, "music_id"])
+    t = t[~t["key"].isin(done | taken | set(sw["dance_key"])) & ~t["music_id"].isin(bad_songs)]
+    g = t.groupby("key").agg(videos=("video_id", "size"), total=("views", "sum"), newest=("posted_at", "max"))
+    top = t.sort_values("views", ascending=False).drop_duplicates("key").set_index("key").join(g)
+    now = pd.Timestamp.now().timestamp()
+    cards = [{"key": k, "label": song(r.music_title, r.music_author), "credit": credit(r.caption, r.author),
+              "video_id": r.video_id, "music_id": r.music_id, "author": r.author, "views": r.views, "likes": r.likes,
+              "saves": r.saves, "saves_per_1k": round(r.saves / r.views * 1000) if r.views else 0,
+              "days_ago": int((now - r.posted_at) // 86400), "videos": int(r.videos), "total": int(r.total),
+              "newest_days": int((now - r.newest) // 86400)}  # for the date filter: any video this recent
+             for k, r in top.sort_values("total", ascending=False).iterrows()]
+    return clean({"cards": cards})
+
+@app.post("/api/swipe")
+async def swipe(request: Request):
+    b = await request.json()
+    key, name = await _dance(request)
+    decision, reason = b.get("decision"), b.get("reason") or ""
+    vid, mid = str(b.get("video_id", ""))[:30], str(b.get("music_id", ""))[:30]
+    if decision not in ("accept", "decline") or not isinstance(reason, str) or len(reason) > 300:
+        raise HTTPException(400, "bad swipe")
+    from dances import credit
+    con = plan_db()
+    try:
+        # poster + dc credit from our own read, not the page, so Plan's slides can show them after next week's read
+        found = con.execute("SELECT caption, author FROM trending WHERE video_id = ?", (vid,)).fetchone() or ("", "")
+        with con:  # an accept shows up in Plan's "Dances I want to do" slides (plan() reads accepted swipes)
+            con.execute("INSERT OR REPLACE INTO swipes VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'), ?, ?)",
+                        (key, mid, vid, name, decision, reason, credit(found[0], found[1]), found[1]))
+    finally:
+        con.close()
+    return {"ok": True}
 
 # ---------- upload ----------
 KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}

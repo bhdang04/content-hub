@@ -56,6 +56,10 @@ export type Plan = {
 export const send = (path: string, method: string, body?: object) =>
   fetch(`/api/${path}`, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) })
     .then((r) => r.ok, () => false);
+export type Trend = {
+  key: string; label: string; credit: string; video_id: string; music_id: string; author: string;
+  views: number; likes: number; saves: number; saves_per_1k: number; days_ago: number; videos: number; total: number; newest_days: number;
+};
 export type Patterns = {
   top_count: number;
   other_count: number;

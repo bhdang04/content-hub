@@ -36,19 +36,20 @@ def row(r):
     }
 
 
-def favorites(con):
-    """Newest data/raw/favorites/*.jsonl (the "Tiktok Dances to Do" collection) replaces the ideas table:
-    the collection's current state, so videos you un-saved drop out."""
-    files = sorted(glob.glob("data/raw/favorites/*.jsonl"))
+def replace_table(con, folder, table, cols, what):
+    """Newest data/raw/<folder>/*.jsonl replaces the table: its current state, so old rows drop out."""
+    files = sorted(glob.glob(f"data/raw/{folder}/*.jsonl"))
     if not files:
         return
     rows = [json.loads(l) for l in open(files[-1], encoding="utf-8")]
-    cols = ["video_id", "author", "caption", "music_id", "music_title", "music_author", "read_at"]
     with con:
-        con.execute("DROP TABLE IF EXISTS ideas")
-        con.execute(f"CREATE TABLE ideas ({', '.join(c + ' TEXT' for c in cols)})")
-        con.executemany(f"INSERT INTO ideas VALUES ({','.join('?' * len(cols))})", [[r.get(c) for c in cols] for r in rows])
-    print(f"Imported {len(rows)} saved dances from {files[-1]}.")
+        con.execute(f"DROP TABLE IF EXISTS {table}")
+        con.execute(f"CREATE TABLE {table} ({', '.join(c + ' TEXT' for c in cols)})")
+        con.executemany(f"INSERT INTO {table} VALUES ({','.join('?' * len(cols))})", [[r.get(c) for c in cols] for r in rows])
+    print(f"Imported {len(rows)} {what} from {files[-1]}.")
+
+
+SOUND = ["video_id", "author", "caption", "music_id", "music_title", "music_author"]
 
 
 def main():
@@ -73,7 +74,9 @@ def main():
         con.executemany(
             f"INSERT OR REPLACE INTO posts ({','.join(COLS)}) VALUES ({','.join(':' + c for c in COLS)})",
             rows.values())
-    favorites(con)
+    # "Tiktok Dances to Do" Favorites, and the weekly hashtag read (scripts/trending_read.js)
+    replace_table(con, "favorites", "ideas", SOUND + ["read_at"], "saved dances")
+    replace_table(con, "trending", "trending", SOUND + ["views", "likes", "saves", "posted_at", "tag"], "trending posts")
     total, ads = con.execute("SELECT COUNT(*), SUM(is_ad) FROM posts").fetchone()
     assert total >= len(rows)
     print(f"Imported {len(rows)} posts from {len(files)} file(s), skipped {skipped} private/error. "

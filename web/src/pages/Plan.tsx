@@ -21,11 +21,10 @@ export default function PlanPage({ version }: { version: number }) {
   const at = (date: string, slot: number) => p.planned.find((x) => x.date === date && x.slot === slot);
   const fmtDay = (d: string) => new Date(`${d}T12:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const best = new Map(p.dances.map((d) => [d.key, d]));
-  // shortlist holds both lists: Favorites added under the player, and dances added on the Library tab
-  const fav = new Set(p.ideas.filter((i) => !i.done).map((i) => i.key));
+  // shortlist holds both lists: dances you've done (added on Library) and new ones (+ Add in the player)
   const saved = new Set(p.shortlist.map((s) => s.key));
-  const fromLibrary = p.shortlist.filter((s) => !s.planned && !fav.has(s.key));
-  const added = p.shortlist.filter((s) => !s.planned && fav.has(s.key));
+  const fromLibrary = p.shortlist.filter((s) => !s.planned && best.has(s.key));
+  const added = p.shortlist.filter((s) => !s.planned && !best.has(s.key));
   const want = p.ideas.filter((i) => !i.done && !i.planned && !saved.has(i.key));
   const n = Math.min(at_, want.length - 1); // the list shrinks after each Add
   const cur = want[n];
@@ -79,7 +78,7 @@ export default function PlanPage({ version }: { version: number }) {
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="Dances I want to do"
-              sub={`From your "Tiktok Dances to Do" Favorites, by song. ${doneCount ? `${doneCount} you've already posted are left out (they're in Library).` : ""}`}>
+              sub={`Dances you ✓ on Home, then your "Tiktok Dances to Do" Favorites, by song. ${doneCount ? `${doneCount} you've already posted are left out (they're in Library).` : ""}`}>
           {p.ideas.length === 0 && <p className="text-muted text-sm">Not read yet. Ask Claude to read your Favorites, then run ./run.sh import.</p>}
           {cur && (
             <div className="flex flex-col items-center gap-2">

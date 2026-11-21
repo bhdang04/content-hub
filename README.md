@@ -36,7 +36,7 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 - TikTok Studio zips: uploaded as now.
 - Weekly "update my dashboard" chat; Claude in Chrome reads:
   - Studio per-post pages: every post once, then the last ~10 each week. Views, likes, comments, shares, saves, play time, avg watch time, watched full %, new followers, drop-off second, traffic source. Not the hourly chart.
-  - TikTok Creative Center trends.
+  - Dance hashtag pages (trending dances; Creative Center no longer has them).
   - The "Dance ideas" Favorites collection.
 - Competitor rows: typed in the Competitors page.
 - Stored in one SQLite file, `data/hub.db` (git-ignored). Exports stay as zips.
@@ -52,7 +52,7 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅
 2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice. Step 2 done Nov 20 (days-since-previous-post dropped).
 3. Plan calendar (tap a dance, tap a day; up to 3 a day, no set times) + Library tab (one tile per dance you have done, by sound + "dc: @creator", best video shown; "Add to plan"). Saved read done Nov 20 ("Tiktok Dances to Do" Favorites → data/raw/favorites/, ideas table, named by song). Step 3 done.
-4. Creative Center read (adds Trending).
+4. Trending read (adds Trending). Creative Center has no dance or song trends (checked Nov 20, logged in too), so Claude in Chrome reads public tag pages instead: #dancechallenge #1persondance #dance #choreography #viraldance, last 30 days, via `scripts/trending_read.js` → data/raw/trending/ → `trending` table. Home "Dances to try" = swipe card: ✓ adds to Plan, ✕ asks why (saved in `swipes` for the weekly read). Built Nov 20.
 5. Competitors page (adds Competitor).
 
 ## Data
