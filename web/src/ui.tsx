@@ -1,4 +1,9 @@
-import type { ComponentProps, ReactNode } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
+
+const rise = { initial: { opacity: 0, y: 18 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "-40px" },
+               transition: { type: "spring", stiffness: 260, damping: 26 } } as const;
 
 /** TikTok's player. In demo mode (./run.sh demo) the video IDs are fake, so show a box instead of a dead player. */
 export function TikTok(props: ComponentProps<"iframe">) {
@@ -12,11 +17,11 @@ export function TikTok(props: ComponentProps<"iframe">) {
 
 export function Card({ title, sub, children, className = "" }: { title?: string; sub?: string; children?: ReactNode; className?: string }) {
   return (
-    <section className={`bg-card rounded-2xl p-[22px] ${className}`}>
+    <motion.section {...rise} className={`neon-card rounded-2xl p-[22px] ${className}`}>
       {title && <h2 className="font-semibold">{title}</h2>}
       {sub && <p className="text-muted text-sm mt-1 mb-3">{sub}</p>}
       {children}
-    </section>
+    </motion.section>
   );
 }
 
@@ -30,11 +35,45 @@ export function Badge({ children, good }: { children: ReactNode; good: boolean }
 
 export function Kpi({ label, value, sub, badge }: { label: string; value: string; sub: string; badge?: ReactNode }) {
   return (
-    <div className="bg-card rounded-2xl p-[22px]">
+    <motion.div {...rise} whileHover={{ y: -4 }} className="neon-card rounded-2xl p-[22px]">
       <div className="text-muted text-sm">{label}</div>
-      <div className="text-4xl font-bold tracking-tight mt-1">{value}</div>
+      <div className="text-4xl font-bold tracking-tight mt-1"><CountUp value={value} /></div>
       <div className="text-muted text-xs mt-1 flex flex-wrap items-center gap-2">{badge}{sub}</div>
-    </div>
+    </motion.div>
+  );
+}
+
+/** "1.5M", "10.5%", "3,452": the number counts up from 0, the rest stays. Anything else shows as is. */
+function CountUp({ value }: { value: string }) {
+  const m = value.match(/^([\d,]*\.?\d+)(.*)$/);
+  const end = m ? Number(m[1].replace(/,/g, "")) : 0;
+  const dec = m?.[1].split(".")[1]?.length ?? 0;
+  const still = useReducedMotion();
+  const [n, setN] = useState(m && !still ? 0 : end);
+  useEffect(() => {
+    if (!m || still) return setN(end);
+    const a = animate(0, end, { duration: 1.2, ease: "easeOut", onUpdate: setN });
+    return () => a.stop();
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!m) return <>{value}</>;
+  const txt = m[1].includes(",") ? Math.round(n).toLocaleString("en-US") : n.toFixed(dec);
+  return <>{txt}{m[2]}</>;
+}
+
+/** Full-screen popup, drawn at the page root (a parent's transform would otherwise trap a fixed box). */
+export function Overlay({ open, onClose, children, className = "", label }: { open: boolean; onClose: () => void; children: ReactNode; className?: string; label?: string }) {
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div role="dialog" aria-modal="true" aria-label={label} onClick={onClose}
+                    onKeyDown={(e) => e.key === "Escape" && onClose()}
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className={`fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 ${className}`}>
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -53,8 +92,17 @@ export function RecList({ items, dot }: { items?: string[]; dot: string }) {
   );
 }
 
-export function Loading({ error }: { error?: string }) {
-  return error ? <Card title="Couldn't load this" sub={error} /> : <p className="text-muted">Loading…</p>;
+/** `small`: a shimmer bar inside a card, instead of a whole-page placeholder. */
+export function Loading({ error, small }: { error?: string; small?: boolean }) {
+  if (error) return small ? <p className="text-bad-text text-sm">{error}</p> : <Card title="Couldn't load this" sub={error} />;
+  if (small) return <div className="shimmer h-16 rounded-xl" aria-label="Loading" />;
+  return (
+    <div className="space-y-4 pt-2" aria-label="Loading">
+      <div className="shimmer h-9 w-48 rounded-lg" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">{[0, 1, 2].map((i) => <div key={i} className="shimmer h-28 rounded-2xl" />)}</div>
+      <div className="shimmer h-64 rounded-2xl" />
+    </div>
+  );
 }
 
 /** Plain table. Columns: [header, cell renderer, right-align?]. Click a header to sort when `sort` is given. */

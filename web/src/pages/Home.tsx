@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { type Home, type Post, type Track, type Trend, num, send, sendMsg, short, useApi } from "../api";
-import { Badge, Card, Kpi, Loading, RecList, TikTok } from "../ui";
+import { Badge, Card, Kpi, Loading, Overlay, RecList, TikTok } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
 const axis = { stroke: MUTED, tickLine: false, axisLine: false, fontSize: 12 };
@@ -85,7 +86,7 @@ function TrackCard({ version }: { version: number }) {
   const sub = t?.advice_date ? `Videos posted since the advice from ${t.advice_date}, from the past-7-days export.` : "From the past-7-days export.";
   return (
     <Card title="Did last week's advice work?" sub={sub}>
-      {!t ? <Loading error={error} />
+      {!t ? <Loading small error={error} />
         : t.message ? <p className="text-muted text-sm">{t.message}</p>
         : (
           <>
@@ -190,19 +191,25 @@ function DanceSwipe({ version }: { version: number }) {
   const [days, setDays] = useState(30);
   const cards = data?.cards.filter((x) => x.newest_days < days) ?? [];
   const c = cards[0];
+  const [dir, setDir] = useState(0); // which way the last card flew: 1 = ✓ right, -1 = ✕ left
+  const [bursts, setBursts] = useState(0); // bumps on each ✓ to replay the sparks
 
   const swipe = async (decision: "accept" | "decline", reason = "") => {
     if (!c || busy) return;
     setBusy(true);
     const ok = await send("swipe", "POST", { key: c.key, name: c.label, video_id: c.video_id, music_id: c.music_id, decision, reason });
     setSaveError(ok ? "" : "Couldn't save that. Is the dashboard still running?");
-    if (ok) { setAsking(false); setWhy(""); setBump((b) => b + 1); }
+    if (ok) {
+      setDir(decision === "accept" ? 1 : -1);
+      if (decision === "accept") setBursts((b) => b + 1);
+      setAsking(false); setWhy(""); setBump((b) => b + 1);
+    }
     setBusy(false);
   };
 
   return (
     <Card title="Dances to try" sub={data ? `Dances you saw trending and pasted below. ${cards.length} left from the ${PERIODS.find((p) => p.days === days)?.label.toLowerCase()}.` : undefined}>
-      {!data && <Loading error={error} />}
+      {!data && <Loading small error={error} />}
       {data && (
         <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Posted within">
           {PERIODS.map((p) => (
@@ -213,8 +220,11 @@ function DanceSwipe({ version }: { version: number }) {
       )}
       {data && !c && <p className="text-muted text-sm">{data.cards.length ? "None this recent. Try a longer time." : "No new dances. Paste a TikTok link below."}</p>}
       {saveError && <p className="text-bad-text text-sm">{saveError}</p>}
+      <div className="relative">
+      <Sparks n={bursts} />
+      <AnimatePresence mode="popLayout" custom={dir} initial={false}>
       {c && (
-        <div className="flex flex-col items-center gap-2">
+        <SwipeCard key={c.video_id} onYes={() => swipe("accept")} onNo={() => setAsking(true)}>
           {/* key: a fresh player per card */}
           <TikTok key={c.video_id} src={`https://www.tiktok.com/player/v1/${c.video_id}?description=0&music_info=0&rel=0`}
                   title={c.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
@@ -226,19 +236,19 @@ function DanceSwipe({ version }: { version: number }) {
             <div><p className="font-bold">{c.videos}</p><p className="text-muted text-xs">{c.videos === 1 ? "video" : "videos"} with this dance</p></div>
           </div>}
           <div className="flex gap-4 mt-1">
-            <button onClick={() => setAsking(true)} disabled={busy} aria-label="Decline"
-                    className="rounded-full border border-bad-text text-bad-text w-14 h-14 text-2xl disabled:opacity-30">✕</button>
-            <button onClick={() => swipe("accept")} disabled={busy} aria-label="Accept: add to Plan"
-                    className="rounded-full border border-good text-good w-14 h-14 text-2xl disabled:opacity-30">✓</button>
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.85 }} onClick={() => setAsking(true)} disabled={busy} aria-label="Decline"
+                    className="rounded-full border border-bad-text text-bad-text w-14 h-14 text-2xl disabled:opacity-30 hover:shadow-[0_0_20px_-2px_var(--color-bad)]">✕</motion.button>
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.85 }} onClick={() => swipe("accept")} disabled={busy} aria-label="Accept: add to Plan"
+                    className="rounded-full border border-good text-good w-14 h-14 text-2xl disabled:opacity-30 hover:shadow-[0_0_20px_-2px_var(--color-good)]">✓</motion.button>
           </div>
-        </div>
+          <p className="text-muted text-xs">Drag the card right to add, left to skip</p>
+        </SwipeCard>
       )}
+      </AnimatePresence>
+      </div>
       <AddTrend onAdded={() => setBump((b) => b + 1)} />
-      {asking && c && (
-        <div role="dialog" aria-modal="true" aria-label="Why not?" onClick={() => setAsking(false)}
-             onKeyDown={(e) => e.key === "Escape" && setAsking(false)}
-             className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl p-5 w-full max-w-sm space-y-2" onClick={(e) => e.stopPropagation()}>
+      <Overlay open={asking && !!c} onClose={() => setAsking(false)} label="Why not?">
+          <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="neon-card rounded-2xl p-5 w-full max-w-sm space-y-2" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold">Why not this one?</h3>
             {REASONS.map((r, i) => (
               <button key={r} autoFocus={i === 0} onClick={() => swipe("decline", r)} disabled={busy}
@@ -250,10 +260,44 @@ function DanceSwipe({ version }: { version: number }) {
               <button disabled={busy || !why.trim()} className="rounded-lg border border-grid px-3 text-sm disabled:opacity-30">Save</button>
             </form>
             <button onClick={() => setAsking(false)} className="text-muted text-sm w-full pt-1">Cancel</button>
-          </div>
-        </div>
-      )}
+          </motion.div>
+      </Overlay>
     </Card>
+  );
+}
+
+/** Drag right past 120px = yes, left = no; short drags spring back. Flies off the way `custom` (from AnimatePresence) says. */
+function SwipeCard({ onYes, onNo, children }: { onYes: () => void; onNo: () => void; children: ReactNode }) {
+  const x = useMotionValue(0);
+  const tilt = useTransform(x, [-200, 200], [-14, 14]);
+  const yes = useTransform(x, [20, 120], [0, 1]), no = useTransform(x, [-120, -20], [1, 0]);
+  return (
+    <motion.div style={{ x, rotate: tilt }} drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={0.8}
+                onDragEnd={(_, i) => { if (i.offset.x > 120) onYes(); else if (i.offset.x < -120) onNo(); }}
+                initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                variants={{ out: (d: number) => ({ x: d * 420, rotate: d * 25, opacity: 0, transition: { duration: 0.35 } }) }} exit="out"
+                className="relative flex flex-col items-center gap-2 cursor-grab active:cursor-grabbing touch-pan-y">
+      {/* stamps fade in as you drag: right = add, left = skip */}
+      <motion.span style={{ opacity: yes }} className="pointer-events-none absolute top-4 left-4 z-10 -rotate-12 rounded-lg border-2 border-good text-good px-3 py-1 font-black text-xl">ADD</motion.span>
+      <motion.span style={{ opacity: no }} className="pointer-events-none absolute top-4 right-4 z-10 rotate-12 rounded-lg border-2 border-bad-text text-bad-text px-3 py-1 font-black text-xl">SKIP</motion.span>
+      {children}
+    </motion.div>
+  );
+}
+
+/** A ring of cyan/red sparks that bursts once each time `n` goes up. */
+function Sparks({ n }: { n: number }) {
+  if (!n) return null;
+  return (
+    <div key={n} className="pointer-events-none absolute left-1/2 top-1/3 z-20" aria-hidden>
+      {Array.from({ length: 14 }, (_, i) => {
+        const a = (i / 14) * 2 * Math.PI, r = 90 + (i % 3) * 30;
+        return <motion.span key={i} initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                            animate={{ x: Math.cos(a) * r, y: Math.sin(a) * r, opacity: 0, scale: 0.3 }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                            className={`absolute size-2.5 rounded-full ${i % 2 ? "bg-good" : "bg-bad"} shadow-[0_0_10px_currentColor]`} />;
+      })}
+    </div>
   );
 }
 

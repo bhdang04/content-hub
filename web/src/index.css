@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* TikTok palette (same as the old Streamlit dashboard).
-   Color goes on data only: good = cyan, bad = red. Cards are flat: no shadows, no gradients. */
+/* TikTok palette (same as the old Streamlit dashboard). Data colors: good = cyan, bad = red.
+   Neon look: two slow cyan/red glows behind everything, glassy cards that glow on hover. */
 @theme {
   --color-ground: #0a0a0c;
   --color-card: #16161a;
@@ -19,4 +19,72 @@ body {
   background: var(--color-ground);
   color: var(--color-text);
   font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* the drifting glows: fixed, behind the page, never catch clicks */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.16;
+  pointer-events: none;
+}
+body::before {
+  background: var(--color-good);
+  top: -25vmax;
+  left: -15vmax;
+  animation: drift 22s ease-in-out infinite alternate;
+}
+body::after {
+  background: var(--color-bad);
+  bottom: -30vmax;
+  right: -20vmax;
+  animation: drift 28s ease-in-out infinite alternate-reverse;
+}
+@keyframes drift {
+  to { transform: translate(18vmax, 12vmax) scale(1.15); }
+}
+
+/* glass card with a cyan outline on hover (no outer glow: it bled onto the cards next to it) */
+.neon-card {
+  background: color-mix(in srgb, var(--color-card) 82%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  transition: border-color 0.3s;
+}
+.neon-card:hover {
+  border-color: color-mix(in srgb, var(--color-good) 40%, transparent);
+}
+
+/* page titles: cyan-white-red sheen */
+main h1 {
+  background: linear-gradient(90deg, var(--color-good), #fff 50%, var(--color-bad));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* TikTok-style split shadow on the logo */
+.glitch {
+  text-shadow: -2px -1px 0 var(--color-good), 2px 1px 0 var(--color-bad);
+}
+
+/* loading placeholder shimmer */
+.shimmer {
+  background: linear-gradient(90deg, var(--color-card) 25%, var(--color-grid) 50%, var(--color-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after, .shimmer { animation: none; }
 }

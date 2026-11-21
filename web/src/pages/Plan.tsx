@@ -1,6 +1,7 @@
 import { type DragEvent, useState } from "react";
+import { motion } from "framer-motion";
 import { type Plan, send, useApi } from "../api";
-import { Badge, Card, Loading, TikTok } from "../ui";
+import { Badge, Card, Loading, Overlay, TikTok } from "../ui";
 
 type Pick = { key: string; label: string };
 // a calendar spot: a day's slot (plan) or a day's backup; n = slot or backup rank
@@ -68,6 +69,10 @@ export default function PlanPage({ version }: { version: number }) {
     </li>
   );
   const doneCount = p.ideas.filter((i) => i.done).length;
+  // one id per dance on the calendar (2nd copy of a dance gets #1), so a moved dance springs to its new spot
+  const seen = new Map<string, number>();
+  const flyId = (key: string) => { const k = seen.get(key) ?? 0; seen.set(key, k + 1); return `${key}#${k}`; };
+  const spring = { type: "spring", stiffness: 500, damping: 35 } as const;
 
   return (
     <div className="space-y-4">
@@ -81,7 +86,8 @@ export default function PlanPage({ version }: { version: number }) {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         {p.days.map((d) => (
-          <div key={d.date} className="bg-card rounded-xl p-3 min-w-0">
+          <motion.div key={d.date} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: p.days.indexOf(d) * 0.03 }} className="neon-card rounded-xl p-3 min-w-0">
             <div className="flex justify-between text-sm">
               <span className="font-bold">{fmtDay(d.date)}</span>
               {d.posted > 0 && <span className="text-good" title={`${d.posted} posted`}>✓ {d.posted}</span>}
@@ -91,7 +97,8 @@ export default function PlanPage({ version }: { version: number }) {
                 const x = at(d.date, slot);
                 const spot: Spot = { kind: "plan", date: d.date, n: slot };
                 return x ? (
-                  <div key={slot} {...drag({ ...spot, name: x.name })} {...dropOn(spot)}
+                  <motion.div key={slot} layoutId={flyId(x.key)} transition={spring}>
+                  <div {...drag({ ...spot, name: x.name })} {...dropOn(spot)}
                        className={`text-xs rounded-lg bg-grid p-2 flex justify-between gap-1 cursor-grab ${moving ? "outline outline-1 outline-good" : ""}`}>
                     {moving
                       ? <button className="min-w-0 break-words text-left" onClick={() => move(spot)}>{x.name}{tag(x.key)}</button>
@@ -101,6 +108,7 @@ export default function PlanPage({ version }: { version: number }) {
                     <span className="flex flex-col gap-1">{moveBtn({ ...spot, name: x.name })}
                     <button aria-label={`Remove ${x.name}`} className="text-muted hover:text-text" onClick={() => write(`plan/${d.date}/${slot}`, "DELETE")}>✕</button></span>
                   </div>
+                  </motion.div>
                 ) : (
                   <button key={slot} disabled={!picked && !moving} {...dropOn(spot)}
                           onClick={() => moving ? move(spot) : write(`plan/${d.date}/${slot}`, "PUT", { key: picked!.key, name: picked!.label })}
@@ -120,7 +128,8 @@ export default function PlanPage({ version }: { version: number }) {
                   {bs.map((b) => {
                     const spot: Spot = { kind: "backup", date: d.date, n: b.rank };
                     return (
-                      <div key={b.key} {...drag({ ...spot, name: b.name })} {...dropOn(spot)} className="flex justify-between gap-1 cursor-grab">
+                      <motion.div key={b.key} layoutId={flyId(b.key)} transition={spring}>
+                      <div {...drag({ ...spot, name: b.name })} {...dropOn(spot)} className="flex justify-between gap-1 cursor-grab">
                         {moving
                           ? <button className="min-w-0 text-left break-words text-text" onClick={() => move(spot)}>{b.name}{tag(b.key)}</button>
                           : b.video_id
@@ -128,6 +137,7 @@ export default function PlanPage({ version }: { version: number }) {
                           : <span className="min-w-0 break-words">{b.name}{tag(b.key)}</span>}
                         {moveBtn({ ...spot, name: b.name })}
                       </div>
+                      </motion.div>
                     );
                   })}
                   {moving && end.n <= 9 && (
@@ -136,7 +146,7 @@ export default function PlanPage({ version }: { version: number }) {
                 </div>
               );
             })()}
-          </div>
+          </motion.div>
         ))}
       </div>
 
@@ -173,15 +183,15 @@ export default function PlanPage({ version }: { version: number }) {
         </Card>
       </div>
 
-      {preview && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-3 p-4" onClick={() => setPreview(null)}>
+      <Overlay open={!!preview} onClose={() => setPreview(null)} label={preview?.name} className="flex-col gap-3">
+        {preview && <>
           <TikTok key={preview.video_id} src={`https://www.tiktok.com/player/v1/${preview.video_id}?description=0&music_info=0&rel=0&autoplay=1`}
                   title={preview.name} allow="autoplay; fullscreen" className="h-[80vh] max-w-full aspect-[9/16] rounded-xl bg-grid" onClick={(e) => e.stopPropagation()} />
           <p className="text-sm text-center break-words max-w-md">{preview.name}</p>
           {preview.why && <p className="text-muted text-xs text-center max-w-md">{preview.why}</p>}
           <button autoFocus className="rounded-full border border-grid px-4 py-2" onClick={() => setPreview(null)}>Close</button>
-        </div>
-      )}
+        </>}
+      </Overlay>
     </div>
   );
 }
