@@ -495,7 +495,9 @@ async def competitor_add(request: Request):
     n = count(b.get("followers", ""))
     if not re.fullmatch(r"[\w.]{1,40}", handle) or n is None:
         raise HTTPException(400, "Type the handle (like merei.555) and followers (like 45.3K).")
-    return plan_write("INSERT OR REPLACE INTO competitors VALUES (?, ?, strftime('%s','now'))", (handle, n))
+    # named columns: the quest added read_at; an update keeps it and added_at
+    return plan_write("INSERT INTO competitors (handle, followers, added_at) VALUES (?, ?, strftime('%s','now')) "
+                      "ON CONFLICT(handle) DO UPDATE SET followers = excluded.followers", (handle, n))
 
 @app.delete("/api/competitors/{handle}")
 def competitor_remove(handle: str):
