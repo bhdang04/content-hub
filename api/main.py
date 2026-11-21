@@ -274,7 +274,7 @@ def plan():
         ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
         liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
         comp = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
-        backups = pd.read_sql("SELECT date, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
+        backups = pd.read_sql("SELECT date, rank, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
         nope = con.execute("SELECT credit, author FROM swipes WHERE decision = 'decline' AND reason = 'Not my style'").fetchall()
         trend_views = con.execute("SELECT video_id, views FROM trending").fetchall()
     finally:
@@ -346,6 +346,39 @@ async def plan_put(day: str, slot: int, request: Request):
 def plan_delete(day: str, slot: int):
     _slot(day, slot)
     return plan_write("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+
+# a spot on the calendar: a day's slot (plan) or a day's backup (backups); table/column names come only from here
+SPOTS = {"plan": ("plan", "slot", 2), "backup": ("backups", "rank", 9)}
+
+def _spot(s):
+    if not (isinstance(s, dict) and s.get("kind") in SPOTS and isinstance(s.get("date"), str)
+            and type(s.get("n")) is int and 0 <= s["n"] <= SPOTS[s["kind"]][2]):
+        raise HTTPException(400, "bad spot")
+    _slot(s["date"], 0)  # date check
+    return (*SPOTS[s["kind"]][:2], s["date"], s["n"])
+
+@app.post("/api/plan/move")
+async def plan_move(request: Request):
+    """Move a planned or backup dance to another spot. A dance already there swaps into the old spot."""
+    body = await request.json()
+    src, dst = _spot(body.get("from")), _spot(body.get("to"))
+    if src == dst:
+        return {"ok": True}
+    con = plan_db()
+    try:
+        with con:  # one transaction: a failed move changes nothing
+            at = lambda t, c, d, n: con.execute(f"SELECT dance_key, dance_name FROM {t} WHERE date = ? AND {c} = ?", (d, n)).fetchone()
+            a, b = at(*src), at(*dst)
+            if not a:
+                raise HTTPException(404, "nothing to move there")
+            for t, c, d, n in (src, dst):
+                con.execute(f"DELETE FROM {t} WHERE date = ? AND {c} = ?", (d, n))
+            con.execute(f"INSERT INTO {dst[0]} VALUES (?, ?, ?, ?)", (*dst[2:], *a))
+            if b:
+                con.execute(f"INSERT INTO {src[0]} VALUES (?, ?, ?, ?)", (*src[2:], *b))
+    finally:
+        con.close()
+    return {"ok": True}
 
 @app.post("/api/plan/fill")
 def plan_fill():
