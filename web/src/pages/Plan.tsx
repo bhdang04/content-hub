@@ -1,6 +1,6 @@
 import { type DragEvent, useState } from "react";
 import { type Plan, send, useApi } from "../api";
-import { Badge, Card, Loading } from "../ui";
+import { Badge, Card, Loading, TikTok } from "../ui";
 
 type Pick = { key: string; label: string };
 // a calendar spot: a day's slot (plan) or a day's backup; n = slot or backup rank
@@ -147,7 +147,7 @@ export default function PlanPage({ version }: { version: number }) {
           {cur && (
             <div className="flex flex-col items-center gap-2">
               {/* key: a new iframe per video so each one loads fresh */}
-              <iframe key={cur.video_id} src={`https://www.tiktok.com/player/v1/${cur.video_id}?description=0&music_info=0&rel=0`}
+              <TikTok key={cur.video_id} src={`https://www.tiktok.com/player/v1/${cur.video_id}?description=0&music_info=0&rel=0`}
                       title={cur.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
               <p className="text-sm text-center break-words">{cur.label}</p>
               <p className="text-muted text-xs text-center break-words">{cur.source} · {cur.credit ? `dc ${cur.credit}` : `posted by @${cur.author}`}</p>
@@ -175,7 +175,7 @@ export default function PlanPage({ version }: { version: number }) {
 
       {preview && (
         <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-3 p-4" onClick={() => setPreview(null)}>
-          <iframe key={preview.video_id} src={`https://www.tiktok.com/player/v1/${preview.video_id}?description=0&music_info=0&rel=0&autoplay=1`}
+          <TikTok key={preview.video_id} src={`https://www.tiktok.com/player/v1/${preview.video_id}?description=0&music_info=0&rel=0&autoplay=1`}
                   title={preview.name} allow="autoplay; fullscreen" className="h-[80vh] max-w-full aspect-[9/16] rounded-xl bg-grid" onClick={(e) => e.stopPropagation()} />
           <p className="text-sm text-center break-words max-w-md">{preview.name}</p>
           {preview.why && <p className="text-muted text-xs text-center max-w-md">{preview.why}</p>}

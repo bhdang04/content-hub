@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { type Home, type Post, type Track, type Trend, num, send, sendMsg, short, useApi } from "../api";
-import { Badge, Card, Kpi, Loading, RecList } from "../ui";
+import { Badge, Card, Kpi, Loading, RecList, TikTok } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
 const axis = { stroke: MUTED, tickLine: false, axisLine: false, fontSize: 12 };
@@ -230,7 +230,7 @@ function DanceSwipe({ version }: { version: number }) {
       {c && (
         <div className="flex flex-col items-center gap-2">
           {/* key: a fresh player per card */}
-          <iframe key={c.video_id} src={`https://www.tiktok.com/player/v1/${c.video_id}?description=0&music_info=0&rel=0`}
+          <TikTok key={c.video_id} src={`https://www.tiktok.com/player/v1/${c.video_id}?description=0&music_info=0&rel=0`}
                   title={c.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
           <p className="font-bold text-center break-words">{c.label}</p>
           <p className="text-muted text-xs text-center break-words">{c.credit ? `dc ${c.credit}` : "no dc credit"} · posted by @{c.author} · {c.views ? `${c.days_ago}d ago` : `you added it ${c.days_ago}d ago`}</p>

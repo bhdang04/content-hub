@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type Plan, num, send, useApi } from "../api";
-import { Card, Loading } from "../ui";
+import { Card, Loading, TikTok } from "../ui";
 
 /** Every dance you've done, shown by its best video (most views). "Add to plan" puts it on the Plan page. */
 export default function LibraryPage({ version }: { version: number }) {
@@ -28,7 +28,7 @@ export default function LibraryPage({ version }: { version: number }) {
           {p.dances.slice(0, shown).map((d) => (
             <div key={d.key} className="min-w-0">
               {/* TikTok's own player: the browser loads the public video from TikTok; no stats are sent */}
-              <iframe src={`https://www.tiktok.com/player/v1/${d.best_video_id}?description=0&music_info=0&rel=0`}
+              <TikTok src={`https://www.tiktok.com/player/v1/${d.best_video_id}?description=0&music_info=0&rel=0`}
                       title={d.label} loading="lazy" allow="fullscreen" className="w-full aspect-[9/16] rounded-lg bg-grid" />
               <a href={`#video/${d.best_video_id}`} className="font-bold mt-2 block break-words hover:underline">{d.label}</a>
               <p className="text-muted text-xs">Done {d.times}x · best {num(d.best_views)} views</p>

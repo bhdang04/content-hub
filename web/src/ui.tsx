@@ -1,4 +1,14 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
+
+/** TikTok's player. In demo mode (./run.sh demo) the video IDs are fake, so show a box instead of a dead player. */
+export function TikTok(props: ComponentProps<"iframe">) {
+  if (import.meta.env.VITE_DEMO !== "1") return <iframe {...props} />;
+  return (
+    <div className={`${props.className} grid place-items-center text-muted text-sm`} onClick={props.onClick}>
+      Demo video
+    </div>
+  );
+}
 
 export function Card({ title, sub, children, className = "" }: { title?: string; sub?: string; children?: ReactNode; className?: string }) {
   return (

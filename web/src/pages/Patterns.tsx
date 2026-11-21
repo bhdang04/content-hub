@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type Patterns, num, useApi } from "../api";
-import { Card, Loading, Table } from "../ui";
+import { Card, Loading, Table, TikTok } from "../ui";
 
 const fmt = (n: number | null) => (n === null ? "–" : num(n));
 
@@ -26,7 +26,7 @@ export default function PatternsPage({ version }: { version: number }) {
           {p.followers.slice(0, shown).map((r) => (
             <div key={r.video_id} className="min-w-0">
               {/* TikTok's own player: the browser loads the public video from TikTok; no stats are sent */}
-              <iframe src={`https://www.tiktok.com/player/v1/${r.video_id}?description=0&music_info=0&rel=0`}
+              <TikTok src={`https://www.tiktok.com/player/v1/${r.video_id}?description=0&music_info=0&rel=0`}
                       title={r.title} loading="lazy" allow="fullscreen" className="w-full aspect-[9/16] rounded-lg bg-grid" />
               <p className="text-lg font-bold mt-2 tabular-nums">{fmt(r.followers_per_1k)} <span className="text-muted text-xs font-normal">followers per 1,000 views</span></p>
               <a href={`#video/${r.video_id}`} className="text-sm hover:underline block truncate">{r.title || "(no caption)"}</a>

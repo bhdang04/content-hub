@@ -39,11 +39,13 @@ case "${1:-}" in
 PLIST_END
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
-  demo) python3 demo/make.py; export CONTENT_HUB_DEMO=1 ;;
+  demo) python3 demo/make.py; export CONTENT_HUB_DEMO=1 VITE_DEMO=1 ;;  # VITE_DEMO: pages show a box for fake videos
   ""|phone) ;;
   *) sed -n '2,13p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
+# an API already on :8000 would serve the page instead (e.g. your real data during a demo), so stop
+if lsof -ti tcp:8000 -sTCP:LISTEN >/dev/null; then echo "Port 8000 is busy: another dashboard is running. Stop it (Ctrl+C there), then try again."; exit 1; fi
 python3 -m uvicorn api.main:app --host 127.0.0.1 --port 8000 &
 API=$!
 trap 'kill $API 2>/dev/null' EXIT
