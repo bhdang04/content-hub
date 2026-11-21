@@ -78,15 +78,15 @@ export default function PlanPage({ version }: { version: number }) {
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="Dances I want to do"
-              sub={`Dances you ✓ on Home, then your "Tiktok Dances to Do" Favorites, by song. ${doneCount ? `${doneCount} you've already posted are left out (they're in Library).` : ""}`}>
-          {p.ideas.length === 0 && <p className="text-muted text-sm">Not read yet. Ask Claude to read your Favorites, then run ./run.sh import.</p>}
+              sub={`Dances you ✓ on Home, your saved Favorites, then competitors' posts, by song. ${doneCount ? `${doneCount} you've already posted are left out (they're in Library).` : ""}`}>
+          {p.ideas.length === 0 && <p className="text-muted text-sm">Nothing yet. ✓ dances on Home, or add posts on the Competitors page.</p>}
           {cur && (
             <div className="flex flex-col items-center gap-2">
               {/* key: a new iframe per video so each one loads fresh */}
               <iframe key={cur.video_id} src={`https://www.tiktok.com/player/v1/${cur.video_id}?description=0&music_info=0&rel=0`}
                       title={cur.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
               <p className="text-sm text-center break-words">{cur.label}</p>
-              <p className="text-muted text-xs text-center break-words">{cur.credit ? `dc ${cur.credit}` : `posted by @${cur.author}`}</p>
+              <p className="text-muted text-xs text-center break-words">{cur.source} · {cur.credit ? `dc ${cur.credit}` : `posted by @${cur.author}`}</p>
               <div className="flex items-center gap-3">
                 <button onClick={() => setAt(n - 1)} disabled={n === 0} aria-label="Previous video"
                         className="rounded-full border border-grid px-4 py-2 disabled:opacity-30">‹ Back</button>
@@ -98,7 +98,7 @@ export default function PlanPage({ version }: { version: number }) {
               <span className="text-muted text-xs tabular-nums">{n + 1} / {want.length}</span>
             </div>
           )}
-          {p.ideas.length > 0 && !cur && <p className="text-muted text-sm">Every Favorite is added or on a day.</p>}
+          {p.ideas.length > 0 && !cur && <p className="text-muted text-sm">Every dance here is added or on a day.</p>}
           <h3 className="font-bold text-sm mt-4">Added ({added.length})</h3>
           {added.length === 0 && <p className="text-muted text-sm">Tap "+ Add" on a video to save it here. Then tap it and a day.</p>}
           <ul className="text-sm">{added.map(row)}</ul>

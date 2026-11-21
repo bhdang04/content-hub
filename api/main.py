@@ -1,7 +1,7 @@
 """Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
 Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
 Localhost only; your data is not sent anywhere."""
-import io, json, os, re, sqlite3, subprocess, sys, threading, zipfile
+import io, json, os, re, sqlite3, subprocess, sys, threading, time, zipfile
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -233,6 +233,10 @@ SCHEMAS = [
     "CREATE TABLE IF NOT EXISTS shortlist (dance_key TEXT PRIMARY KEY, label TEXT, added_at INTEGER)",
     # every Home swipe and why: read by Claude in the weekly trends read; later, ranking
     "CREATE TABLE IF NOT EXISTS swipes (dance_key TEXT PRIMARY KEY, music_id TEXT, video_id TEXT, label TEXT, decision TEXT, reason TEXT, at INTEGER, credit TEXT, author TEXT)",
+    "CREATE TABLE IF NOT EXISTS trending (video_id TEXT, author TEXT, caption TEXT, music_id TEXT, music_title TEXT, music_author TEXT, views TEXT, likes TEXT, saves TEXT, posted_at TEXT, tag TEXT)",
+    # typed in on the Competitors page (no crawling: Brian copies the numbers from TikTok himself)
+    "CREATE TABLE IF NOT EXISTS competitors (handle TEXT PRIMARY KEY, followers INTEGER, added_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS competitor_posts (video_id TEXT PRIMARY KEY, handle TEXT, views INTEGER, likes INTEGER, comments INTEGER, shares INTEGER, caption TEXT, sound TEXT, format TEXT, added_at INTEGER)",
 ]
 
 def plan_db():
@@ -265,17 +269,22 @@ def plan():
         has_ideas = con.execute("SELECT 1 FROM sqlite_master WHERE name = 'ideas'").fetchone()
         ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
         liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
+        comp = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
     finally:
         con.close()
     posted = df["posted"].value_counts()
     d = dances(df[df["is_ad"] == 0]) if "music_id" in df else pd.DataFrame(columns=["key"])  # an ad isn't a dance
     done = dict(zip(d["key"], d["times"]))
     want = [{"key": dance_key(r.music_id, r.caption, r.author), "label": song(r.music_title, r.music_author),
-             "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author}
+             "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author, "source": "Saved"}
             for r in ideas.itertuples()]
-    liked = [r | {"credit": r["credit"] or "", "author": r["author"] or ""} for r in rows(liked)]
+    want += [{"key": dance_key(sound_id(r.sound), r.caption, r.handle), "label": r.sound, "credit": credit(r.caption, r.handle),
+              "video_id": r.video_id, "author": r.handle, "source": "Competitor"} for r in comp.itertuples()]
+    liked = [r | {"credit": r["credit"] or "", "author": r["author"] or "", "source": "Trending"} for r in rows(liked)]
     keys = {x["key"] for x in liked}
     want = liked + [w for w in want if w["key"] not in keys]  # ✓ on Home first, newest first
+    seen = set()
+    want = [w for w in want if not (w["key"] in seen or seen.add(w["key"]))]  # one per dance, first one wins
     for w in want:
         w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
         w["planned"] = w["key"] in set(planned["key"])
@@ -347,7 +356,7 @@ def trending():
     t = t[~t["key"].isin(done | taken | set(sw["dance_key"])) & ~t["music_id"].isin(bad_songs)]
     g = t.groupby("key").agg(videos=("video_id", "size"), total=("views", "sum"), newest=("posted_at", "max"))
     top = t.sort_values("views", ascending=False).drop_duplicates("key").set_index("key").join(g)
-    now = pd.Timestamp.now().timestamp()
+    now = time.time()  # epoch seconds, same as posted_at (a naive Timestamp is read as UTC: hours off)
     cards = [{"key": k, "label": song(r.music_title, r.music_author), "credit": credit(r.caption, r.author),
               "video_id": r.video_id, "music_id": r.music_id, "author": r.author, "views": r.views, "likes": r.likes,
               "saves": r.saves, "saves_per_1k": round(r.saves / r.views * 1000) if r.views else 0,
@@ -375,6 +384,106 @@ async def swipe(request: Request):
     finally:
         con.close()
     return {"ok": True}
+
+# ---------- typed-in data: trending links + competitors (no automated TikTok reads) ----------
+LINK = re.compile(r"tiktok\.com/@([\w.]{1,40})/video/(\d{5,25})")
+
+def sound_id(sound):
+    """Typed-in posts have no TikTok music id; the song name stands in, so the same song groups together."""
+    return "song:" + " ".join(sound.lower().split())
+
+def count(x):
+    """'1.2M' / '45.3K' / '1,234' / 12 -> int, as TikTok shows them. None when it isn't a count."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([KkMm]?)", str(x).replace(",", "").strip())
+    return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+assert count("1.2M") == 1_200_000 and count("45.3K") == 45_300 and count("1,234") == 1234 and count(7) == 7
+assert count("") is None and count("-5") is None and count("1e9") is None
+assert LINK.search("https://www.tiktok.com/@merei.555/video/7312345678901234567?lang=en").groups() == ("merei.555", "7312345678901234567")
+
+def _text(b, k, n, need=True):
+    v = b.get(k, "")
+    if not isinstance(v, str) or len(v) > n or (need and not v.strip()):
+        raise HTTPException(400, f"bad {k}")
+    return " ".join(v.split())
+
+def _link(b):
+    m = LINK.search(b.get("link", "") if isinstance(b.get("link"), str) else "")
+    if not m:
+        raise HTTPException(400, "Paste the full TikTok link, like https://www.tiktok.com/@name/video/123...")
+    return m.groups()
+
+@app.post("/api/trending")
+async def trending_add(request: Request):
+    """A dance you saw on TikTok: paste its link + song name and it becomes a Home card."""
+    b = await request.json()
+    author, vid = _link(b)
+    sound, caption = _text(b, "song", 200), _text(b, "credit", 100, need=False)
+    return plan_write("INSERT INTO trending VALUES (?, ?, ?, ?, ?, '', '0', '0', '0', strftime('%s','now'), 'manual')",
+                      (vid, author, f"dc: {caption}" if caption and "dc" not in caption.lower() else caption, sound_id(sound), sound))
+
+FORMATS = ["1-person", "2-person", "trend", "original"]
+
+@app.get("/api/competitors")
+def competitors():
+    con = plan_db()
+    try:
+        acc = pd.read_sql("SELECT handle, followers FROM competitors ORDER BY added_at", con)
+        p = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
+    finally:
+        con.close()
+    out = [{**a, "posts": rows(p[p["handle"] == a["handle"]])} for a in rows(acc)]
+    # format vs the rest, across all their posts; 2+ on each side or it's just one lucky video
+    comp = []
+    for f in FORMATS:
+        m = p["format"] == f
+        if m.sum() >= 2 and (~m).sum() >= 2:
+            x = p.loc[m, "views"].median() / max(p.loc[~m, "views"].median(), 1)
+            more = f"{x:.1f}x the views of" if x >= 1 else f"{1 / x:.1f}x fewer views than"
+            comp.append(f"Their {f} videos get {more} their other videos ({m.sum()} vs {(~m).sum()} posts).")
+    return clean({"accounts": out, "formats": FORMATS, "compare": comp})
+
+@app.post("/api/competitors")
+async def competitor_add(request: Request):
+    b = await request.json()
+    handle = _text(b, "handle", 40).lstrip("@")
+    n = count(b.get("followers", ""))
+    if not re.fullmatch(r"[\w.]{1,40}", handle) or n is None:
+        raise HTTPException(400, "Type the handle (like merei.555) and followers (like 45.3K).")
+    return plan_write("INSERT OR REPLACE INTO competitors VALUES (?, ?, strftime('%s','now'))", (handle, n))
+
+@app.delete("/api/competitors/{handle}")
+def competitor_remove(handle: str):
+    con = plan_db()
+    try:
+        with con:
+            con.execute("DELETE FROM competitor_posts WHERE handle = ?", (handle,))
+            con.execute("DELETE FROM competitors WHERE handle = ?", (handle,))
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.post("/api/competitor_posts")
+async def competitor_post_add(request: Request):
+    b = await request.json()
+    handle, vid = _link(b)
+    nums = [count(b.get(k, "0") or "0") for k in ("views", "likes", "comments", "shares")]
+    if None in nums or b.get("format") not in FORMATS:
+        raise HTTPException(400, "Numbers like 1.2M or 45K, and pick a format.")
+    con = plan_db()
+    try:
+        if not con.execute("SELECT 1 FROM competitors WHERE handle = ?", (handle,)).fetchone():
+            raise HTTPException(400, f"That link is from @{handle}. Add @{handle} as a competitor first.")
+        with con:
+            con.execute("INSERT OR REPLACE INTO competitor_posts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))",
+                        (vid, handle, *nums, _text(b, "caption", 300, need=False), _text(b, "sound", 200), b["format"]))
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.delete("/api/competitor_posts/{video_id}")
+def competitor_post_remove(video_id: str):
+    return plan_write("DELETE FROM competitor_posts WHERE video_id = ?", (video_id,))
 
 # ---------- upload ----------
 KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}

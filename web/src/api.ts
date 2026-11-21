@@ -49,9 +49,13 @@ export type Plan = {
   planned: { date: string; slot: number; key: string; name: string }[];
   shortlist: { key: string; label: string; planned: boolean }[];
   // "Tiktok Dances to Do" Favorites, named by song; done = times you've posted the same dance
-  ideas: { key: string; label: string; credit: string; video_id: string; author: string; done: number; planned: boolean }[];
+  ideas: { key: string; label: string; credit: string; video_id: string; author: string; done: number; planned: boolean; source: "Trending" | "Saved" | "Competitor" }[];
   dances: Dance[]; // best views first
 };
+/** POST JSON; returns the API's error text ("" when saved), so forms can show why it was refused. */
+export const sendMsg = (path: string, body: object) =>
+  fetch(`/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(async (r) => (r.ok ? "" : ((await r.json().catch(() => ({}))).detail ?? `${r.status}`)), () => "Couldn't save. Is the dashboard still running?");
 /** Write to the plan/shortlist tables. Returns false when the API refuses or is down. */
 export const send = (path: string, method: string, body?: object) =>
   fetch(`/api/${path}`, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) })
@@ -59,6 +63,14 @@ export const send = (path: string, method: string, body?: object) =>
 export type Trend = {
   key: string; label: string; credit: string; video_id: string; music_id: string; author: string;
   views: number; likes: number; saves: number; saves_per_1k: number; days_ago: number; videos: number; total: number; newest_days: number;
+};
+export type CompetitorPost = {
+  video_id: string; handle: string; views: number; likes: number; comments: number; shares: number; caption: string; sound: string; format: string;
+};
+export type Competitors = {
+  accounts: { handle: string; followers: number; posts: CompetitorPost[] }[];
+  formats: string[];
+  compare: string[]; // plain sentences, e.g. "Their 2-person videos get 3.0x the views of their other videos (4 vs 6 posts)."
 };
 export type Patterns = {
   top_count: number;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { type Home, type Post, type Track, type Trend, num, send, short, useApi } from "../api";
+import { type Home, type Post, type Track, type Trend, num, send, sendMsg, short, useApi } from "../api";
 import { Badge, Card, Kpi, Loading, RecList } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
@@ -215,7 +215,7 @@ function DanceSwipe({ version }: { version: number }) {
   };
 
   return (
-    <Card title="Dances to try" sub={data ? `Trending on dance hashtags. ${cards.length} left from the ${PERIODS.find((p) => p.days === days)?.label.toLowerCase()}.` : undefined}>
+    <Card title="Dances to try" sub={data ? `Dances you saw trending and pasted below. ${cards.length} left from the ${PERIODS.find((p) => p.days === days)?.label.toLowerCase()}.` : undefined}>
       {!data && <Loading error={error} />}
       {data && (
         <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Posted within">
@@ -225,7 +225,7 @@ function DanceSwipe({ version }: { version: number }) {
           ))}
         </div>
       )}
-      {data && !c && <p className="text-muted text-sm">{data.cards.length ? "None this recent. Try a longer time." : "No new trending dances. Ask Claude to read trends, then run ./run.sh import."}</p>}
+      {data && !c && <p className="text-muted text-sm">{data.cards.length ? "None this recent. Try a longer time." : "No new dances. Paste a TikTok link below."}</p>}
       {saveError && <p className="text-bad-text text-sm">{saveError}</p>}
       {c && (
         <div className="flex flex-col items-center gap-2">
@@ -233,12 +233,12 @@ function DanceSwipe({ version }: { version: number }) {
           <iframe key={c.video_id} src={`https://www.tiktok.com/player/v1/${c.video_id}?description=0&music_info=0&rel=0`}
                   title={c.label} allow="autoplay; fullscreen" className="h-[60vh] max-w-full aspect-[9/16] rounded-xl bg-grid" />
           <p className="font-bold text-center break-words">{c.label}</p>
-          <p className="text-muted text-xs text-center break-words">{c.credit ? `dc ${c.credit}` : "no dc credit"} · posted by @{c.author} · {c.days_ago}d ago</p>
-          <div className="grid grid-cols-3 gap-2 w-full text-center text-sm">
+          <p className="text-muted text-xs text-center break-words">{c.credit ? `dc ${c.credit}` : "no dc credit"} · posted by @{c.author} · {c.views ? `${c.days_ago}d ago` : `you added it ${c.days_ago}d ago`}</p>
+          {c.views > 0 && <div className="grid grid-cols-3 gap-2 w-full text-center text-sm">
             <div><p className="font-bold">{short(c.views)}</p><p className="text-muted text-xs">views</p></div>
             <div><p className="font-bold">{short(c.saves)}</p><p className="text-muted text-xs">saves ({c.saves_per_1k} per 1K views)</p></div>
             <div><p className="font-bold">{c.videos}</p><p className="text-muted text-xs">{c.videos === 1 ? "video" : "videos"} with this dance</p></div>
-          </div>
+          </div>}
           <div className="flex gap-4 mt-1">
             <button onClick={() => setAsking(true)} disabled={busy} aria-label="Decline"
                     className="rounded-full border border-bad-text text-bad-text w-14 h-14 text-2xl disabled:opacity-30">✕</button>
@@ -247,6 +247,7 @@ function DanceSwipe({ version }: { version: number }) {
           </div>
         </div>
       )}
+      <AddTrend onAdded={() => setBump((b) => b + 1)} />
       {asking && c && (
         <div role="dialog" aria-modal="true" aria-label="Why not?" onClick={() => setAsking(false)}
              onKeyDown={(e) => e.key === "Escape" && setAsking(false)}
@@ -267,5 +268,24 @@ function DanceSwipe({ version }: { version: number }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/** Paste a dance you saw on TikTok; it becomes a card above. No automated reads: you pick what goes in. */
+function AddTrend({ onAdded }: { onAdded: () => void }) {
+  const [f, setF] = useState({ link: "", song: "", credit: "" });
+  const [msg, setMsg] = useState("");
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const box = "w-full rounded-lg border border-grid bg-transparent px-3 py-2 text-sm";
+  return (
+    <form className="space-y-2 mt-4 border-t border-grid pt-4"
+          onSubmit={async (e) => { e.preventDefault(); const err = await sendMsg("trending", f); setMsg(err); if (!err) { setF({ link: "", song: "", credit: "" }); onAdded(); } }}>
+      <h3 className="font-semibold text-sm">Add a dance you saw</h3>
+      <input value={f.link} onChange={set("link")} placeholder="TikTok link from the browser (tiktok.com/@name/video/...)" aria-label="TikTok link" className={box} />
+      <input value={f.song} onChange={set("song")} maxLength={200} placeholder="Song name" aria-label="Song name" className={box} />
+      <input value={f.credit} onChange={set("credit")} maxLength={100} placeholder="dc @creator (optional)" aria-label="Dance credit" className={box} />
+      <button disabled={!f.link.trim() || !f.song.trim()} className="w-full rounded-lg border border-good text-good py-2 text-sm disabled:opacity-30">Add card</button>
+      {msg && <p className="text-bad-text text-sm">{msg}</p>}
+    </form>
   );
 }
