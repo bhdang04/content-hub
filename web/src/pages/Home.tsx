@@ -17,8 +17,6 @@ const CHECKS: Record<string, string> = {
 export default function HomePage({ version, onUploaded }: { version: number; onUploaded: () => void }) {
   const { data: h, error } = useApi<Home>("home", version);
   if (!h) return <Loading error={error} />;
-  const g = h.goal;
-  const onPace = g.last_week >= g.per_week_needed;
   const change = h.views_28d_change_pct;
 
   return (
@@ -26,24 +24,12 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
       <h1 className="text-3xl font-bold pt-2">Home</h1>
       <p className="text-muted text-sm">Past-year export: {h.range[0]} to {h.range[1]}</p>
 
-      <Card>
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          <span className="text-2xl font-bold">{short(g.followers)} / {short(g.goal)}</span>
-          <span className="text-muted text-sm">followers by {g.by}</span>
-          <span className="text-sm">need ~{Math.ceil(g.per_week_needed)}/week</span>
-          <span className="text-sm">did <span className={onPace ? "text-good" : "text-bad-text"}>{num(g.last_week)}</span> last week</span>
-        </div>
-        <div className="h-2 bg-grid rounded-full mt-3">
-          <div className="h-2 bg-good rounded-full" style={{ width: `${Math.min(100, (g.followers / g.goal) * 100)}%` }} />
-        </div>
-      </Card>
-
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
         <div className="space-y-4 min-w-0">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Kpi label="Video views (year)" value={short(h.views_year)} sub={`${short(h.views_28d)} in the last 28 days`}
                  badge={change === null ? undefined : <Badge good={change >= 0}>{change >= 0 ? "+" : ""}{change.toFixed(0)}%</Badge>} />
-            <Kpi label="Followers" value={short(g.followers)} sub="this year"
+            <Kpi label="Followers" value={short(h.followers)} sub="this year"
                  badge={<Badge good={h.follower_gain_year >= 0}>{h.follower_gain_year >= 0 ? "+" : ""}{num(h.follower_gain_year)}</Badge>} />
             <Kpi label="Typical engagement" value={`${h.typical_engagement_pct.toFixed(1)}%`} sub={`across ${h.videos} videos`} />
           </div>

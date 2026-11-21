@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 export type Advice = { post?: string[]; improve?: string[]; test?: string[] };
 export type Home = {
   range: [string, string];
-  goal: { followers: number; goal: number; by: string; per_week_needed: number; last_week: number };
+  followers: number;
   views_year: number;
   views_28d: number;
   views_28d_change_pct: number | null;

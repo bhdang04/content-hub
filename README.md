@@ -1,6 +1,53 @@
 # Content Hub
 
-Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calculates performance, explains patterns, recommends what to post next.
+A local dashboard and weekly planner for TikTok creators. It reads your TikTok Studio exports, shows which videos win you followers (not just views), and fills next week's posting plan with a reason for each pick. Everything runs on your own computer. Nothing is uploaded anywhere.
+
+Built for a dance account, so some labels say "dance". It works for any content.
+
+## Try it in 2 minutes (fake data)
+You need Python 3.12 and Node 22.
+```
+git clone https://github.com/bhdang04/content-hub && cd content-hub
+pip install pandas==2.2.2 fastapi==0.165.0 uvicorn httpx==0.27.0
+./run.sh demo        # then open http://127.0.0.1:5173
+```
+The demo makes a fake account (`demo/make.py`) in `demo/data/`. It never reads real data. Videos show as grey "Demo video" boxes because the IDs are fake.
+
+## Use it with your own account
+1. In TikTok Studio, export the **past 365 days** zips: Overview, Content, Followers, Viewers.
+2. Put them in `data/raw/year/`. Put a past-7-days export in `data/raw/week/` if you want the "did the advice work?" check. `data/` is git-ignored, so your numbers never get committed.
+3. Run `./run.sh`, then open http://127.0.0.1:5173.
+
+Per-post data (new followers per video, watch time, sounds) comes from the Studio analytics pages. It's loaded with `./run.sh import` from `data/raw/studio/*.jsonl`. Without it, the Home, Videos and Patterns pages still work from the zips.
+
+## Pages
+- **Home:** what to post next in plain words, new ideas to try (swipe ✓ / ✕).
+- **Videos / Patterns:** every post with its numbers, and what your best videos do differently.
+- **Library:** one tile per sound + credit you've done, with your best take.
+- **Plan:** a 2-week calendar. `./run.sh plan` fills next week with 1 new idea + 2 remakes a day, plus backups, each with a reason. Drag (or tap ↕) to move. Tags show **Learn** (new) or **Done Nx**.
+- **Competitors:** type in a few accounts' top posts and see which formats work for them.
+
+## Commands
+```
+./run.sh              # dashboard (localhost only)
+./run.sh demo         # dashboard on fake data
+./run.sh plan         # fill next week's plan
+./run.sh test         # tests on fake data (also run by GitHub Actions on every push)
+./run.sh check        # safety self-check
+./run.sh help         # every command
+```
+
+## Privacy
+- Localhost only. The API refuses other host names (DNS-rebinding guard), and uploads are checked before saving.
+- Your data lives in git-ignored `data/`. The tests and the demo never touch it, and the tests prove that by comparing your files before and after.
+- `./run.sh phone` shows the dashboard on your phone over the same Wi-Fi. Anyone on that Wi-Fi can see it too.
+
+Stack: Python, pandas, SQLite, FastAPI, React, TypeScript, Tailwind, Recharts, Vite.
+
+---
+
+# Development notes
+The build log and plan this project was made from.
 
 ## Roadmap
 1. Setup ✅
@@ -12,19 +59,11 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 7. Dashboard v1 (Streamlit): retired Nov 20, 2026, replaced by v2.
 8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (step 1 built; rest below)
 
-## Run
-```
-./run.sh              # dashboard: open http://127.0.0.1:5173 (Ctrl+C stops it)
-./run.sh analyze      # text report: views, engagement, followers, viewers
-./run.sh recommend    # refresh the advice
-./run.sh track        # did the last advice work? (past-7-days export)
-```
-
 ## Dashboard v2 plan
 Decided Nov 20, 2026. Used weekly: upload exports, then say "update my dashboard" in a Claude chat.
 
 **Pages**
-1. **Home**: what to post next (incl. hook/retention tips), goal line ("12.0K / 15K, need ~270/week, did X last week"), "did last week's advice work?" card (replaces Track), dances to try, upload exports.
+1. **Home**: what to post next (incl. hook/retention tips), "did last week's advice work?" card (replaces Track), dances to try, upload exports.
 2. **Videos**: table of all posts; click one for its detail page: its Studio numbers vs your usual, drop-off second, traffic source.
 3. **Patterns**: what the biggest videos do differently; which videos won followers.
 4. **Plan**: 2-week calendar, up to 3 posts a day. Possible dances below, labeled Saved / Trending / Remake / Competitor; drag one onto a day. A day ticks off when a post shows up on that date; flagged if the sound differs from the plan. A dance leaves the list once scheduled.
@@ -56,7 +95,7 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 7. "You click, Claude reads": a weekly quest (~10 min). The Hub's quest page lists the pages to open (each new post's Studio analytics, 1-2 competitor profiles, a dance hashtag); Brian clicks each link, Claude reads that open tab and saves it into data/hub.db; the step ticks off.
 8. Weekly planner + email: fills next week with 1-3 dances a day plus backups per day; emails the plan and last week's results (Gmail). Built Nov 20: `./run.sh plan` fills next week's empty slots (1 new dance + 2 refilms a day; new = your list, ✓ Trending, Saved, Competitor; refilms = your best dances not posted in 14 days) + 1 new and 1 refilm backup a day; each one plays on the Plan page. The weekly-plan skill ("plan my week") puts a short results email in a Gmail draft.
 9. Learning picker: ranks dances from swipes, reasons and how each posted dance did. Built Nov 20 (`src/picker.py`): score = new followers vs your usual. Refilms: followers per take; a dance whose last take did worse than the one before is "tired" (ranked lower, rests 4 weeks). New dances: choreographer + sound track record (2+ of your posts), 100K+ views, ✓ swipe, ✕ "Not my style". The Plan page shows one reason line per dance.
-10. Resume polish: fake-data demo mode, tests + CI, write-up with real follower numbers. Demo built Nov 20: `./run.sh demo` runs the dashboard on generated fake data (`demo/make.py`, general creator content) in git-ignored `demo/data/`; your real `data/` is never opened. Tests built Nov 21: `./run.sh test` (plain asserts on demo data: pages load, planner rules, move, phone plan, safety check, real files untouched); GitHub runs them on every push. Write-up: not done.
+10. Resume polish: fake-data demo mode, tests + CI, write-up with real follower numbers. Demo built Nov 20: `./run.sh demo` runs the dashboard on generated fake data (`demo/make.py`, general creator content) in git-ignored `demo/data/`; your real `data/` is never opened. Tests built Nov 21: `./run.sh test` (plain asserts on demo data: pages load, planner rules, move, phone plan, safety check, real files untouched); GitHub runs them on every push. Write-up: kept private (Obsidian), not in the repo.
 
 ## Data
 Put TikTok Studio exports in `data/raw/` (git-ignored, personal data):

@@ -14,8 +14,6 @@ BASE = ROOT / "demo" if os.environ.get("CONTENT_HUB_DEMO") else ROOT
 os.chdir(BASE)  # the scripts read data/raw/... relative to this folder
 sys.path.insert(0, str(ROOT / "src"))
 
-GOAL, GOAL_DATE = 15_000, date(2027, 2, 28)  # follower goal and deadline
-
 app = FastAPI(title="Content Hub API")
 # refuse requests addressed to any other site name, so a web page can't reach this API by
 # pointing its own domain at 127.0.0.1 (DNS rebinding)
@@ -82,8 +80,6 @@ def home():
     o = data.overview.set_index("Date")["Video Views"]
     fol = data.fol.set_index("Date")["Followers"]
     last, prev = o.iloc[-28:].sum(), o.iloc[-56:-28].sum()
-    now, week = fol.iloc[-1], fol.iloc[-1] - fol.iloc[-8]
-    weeks_left = max((GOAL_DATE - date.today()).days / 7, 1)  # from today: an old export mustn't make the pace look easier
 
     def advice():
         script("recommend")
@@ -95,8 +91,7 @@ def home():
     weekly = o.resample("W").sum()
     return clean({
         "range": [str(o.index.min().date()), str(data.END.date())],
-        "goal": {"followers": now, "goal": GOAL, "by": str(GOAL_DATE),
-                 "per_week_needed": max(GOAL - now, 0) / weeks_left, "last_week": week},
+        "followers": fol.iloc[-1],
         "views_year": o.sum(), "views_28d": last, "views_28d_change_pct": (last / prev - 1) * 100 if prev else None,
         "follower_gain_year": fol.iloc[-1] - fol.iloc[0],
         "typical_engagement_pct": engagement(pat.v).median(), "videos": len(pat.v),
