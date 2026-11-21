@@ -9,8 +9,16 @@ Personal TikTok analytics + AI agent. Reads exported TikTok Studio data, calcula
 4. AI agent: find patterns, explain performance ✅
 5. Recommendations: what to post, improve, test ✅
 6. Track recommendations against next videos ✅
-7. Dashboard v1: `streamlit run src/dashboard.py` (local only). Being replaced by v2 below.
-8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (plan below, not built)
+7. Dashboard v1 (Streamlit): retired Nov 20, 2026, replaced by v2.
+8. Dashboard v2: FastAPI + React rebuild with planning, competitors and trends (step 1 built; rest below)
+
+## Run
+```
+./run.sh              # dashboard: open http://127.0.0.1:5173 (Ctrl+C stops it)
+./run.sh analyze      # text report: views, engagement, followers, viewers
+./run.sh recommend    # refresh the advice
+./run.sh track        # did the last advice work? (past-7-days export)
+```
 
 ## Dashboard v2 plan
 Decided Nov 20, 2026. Used weekly: upload exports, then say "update my dashboard" in a Claude chat.
@@ -26,10 +34,8 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 
 **Data**
 - TikTok Studio zips: uploaded as now.
-- Weekly "update my dashboard" chat; Claude in Chrome reads:
-  - Studio per-post pages: every post once, then the last ~10 each week. Views, likes, comments, shares, saves, play time, avg watch time, watched full %, new followers, drop-off second, traffic source. Not the hourly chart.
-  - TikTok Creative Center trends.
-  - The "Dance ideas" Favorites collection.
+- No crawling (decided Nov 20): nothing navigates, clicks or scrolls TikTok on its own, and no scrapers. Only allowed read: Brian opens a page himself and Claude in Chrome reads that open tab. `scripts/*_read.js` are kept but not run.
+- Trending dances: paste a TikTok link + song name on Home's "Dances to try" card.
 - Competitor rows: typed in the Competitors page.
 - Stored in one SQLite file, `data/hub.db` (git-ignored). Exports stay as zips.
 - No scripts feature: ask Claude in chat for script help.
@@ -39,14 +45,18 @@ Analyze is folded into Videos and Home; Track and Recommendations are gone.
 - `./run.sh` starts both while building; once done, the API serves the built React app. Localhost only.
 - Same look as v1: TikTok black/red/cyan tokens, flat cards, color only on data (cyan = good, red = bad), 22px card padding.
 - No personal data hardcoded in screens, so a fake-data demo mode can be added later for a portfolio.
-- Streamlit gets deleted once React matches it.
 
 **Build order**
-1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit.
-2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice.
-3. Plan calendar with drag-and-drop, plus possible dances from Saved and Remake.
-4. Creative Center read (adds Trending).
-5. Competitors page (adds Competitor).
+1. API endpoints for today's data, then rebuild Home, Videos and Patterns in React. Delete Streamlit. ✅
+2. Studio per-post read (Claude in Chrome), the video detail page, hook/retention advice. Step 2 done Nov 20 (days-since-previous-post dropped).
+3. Plan calendar (tap a dance, tap a day; up to 3 a day, no set times) + Library tab (one tile per dance you have done, by sound + "dc: @creator", best video shown; "Add to plan"). Saved read done Nov 20 ("Tiktok Dances to Do" Favorites → data/raw/favorites/, ideas table, named by song). Step 3 done.
+4. Trending read (adds Trending). Creative Center has no dance or song trends (checked Nov 20, logged in too), so Claude in Chrome reads public tag pages instead: #dancechallenge #1persondance #dance #choreography #viraldance, last 30 days, via `scripts/trending_read.js` → data/raw/trending/ → `trending` table. Home "Dances to try" = swipe card: ✓ adds to Plan, ✕ asks why (saved in `swipes` for the weekly read). Built Nov 20. Since the no-crawling call, new cards come from links pasted on Home.
+5. Competitors page (adds Competitor): accounts + their last ~5 hits typed in by hand (link, views, likes, comments, shares, caption, song, format); "their 2-person videos get 3x views" lines; their posts show in Plan's "Dances I want to do". "You post 2-person X%" skipped: your posts have no format yet. Built Nov 20.
+6. Inbox + auto-import: iCloud Drive `Content Hub/inbox` + iOS Shortcuts (share a dance link, save an export); a daily launchd job imports new zips and links (short vm.tiktok.com links expanded, one request each). Plain Python, no AI.
+7. "You click, Claude reads": a weekly quest (~10 min). The Hub's quest page lists the pages to open (each new post's Studio analytics, 1-2 competitor profiles, a dance hashtag); Brian clicks each link, Claude reads that open tab and saves it into data/hub.db; the step ticks off.
+8. Weekly planner + email: fills next week with 1-3 dances a day plus backups per day; emails the plan and last week's results (Gmail). Built Nov 20: `./run.sh plan` fills next week's empty slots (1 new dance + 2 refilms a day; new = your list, ✓ Trending, Saved, Competitor; refilms = your best dances not posted in 14 days) + 1 new and 1 refilm backup a day; each one plays on the Plan page. The weekly-plan skill ("plan my week") puts a short results email in a Gmail draft.
+9. Learning picker: ranks dances from swipes, reasons and how each posted dance did. Built Nov 20 (`src/picker.py`): score = new followers vs your usual. Refilms: followers per take; a dance whose last take did worse than the one before is "tired" (ranked lower, rests 4 weeks). New dances: choreographer + sound track record (2+ of your posts), 100K+ views, ✓ swipe, ✕ "Not my style". The Plan page shows one reason line per dance.
+10. Resume polish: fake-data demo mode, tests + CI, write-up with real follower numbers.
 
 ## Data
 Put TikTok Studio exports in `data/raw/` (git-ignored, personal data):

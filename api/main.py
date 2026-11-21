@@ -1,0 +1,621 @@
+"""Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
+Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
+Localhost only; your data is not sent anywhere."""
+import json, os, re, sqlite3, subprocess, sys, threading, time
+from datetime import date
+from pathlib import Path
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+ROOT = Path(__file__).resolve().parent.parent
+# demo mode (./run.sh demo): fake data in demo/data/ only; your real data/ is never opened
+BASE = ROOT / "demo" if os.environ.get("CONTENT_HUB_DEMO") else ROOT
+os.chdir(BASE)  # the scripts read data/raw/... relative to this folder
+sys.path.insert(0, str(ROOT / "src"))
+
+GOAL, GOAL_DATE = 15_000, date(2027, 2, 28)  # follower goal and deadline
+
+app = FastAPI(title="Content Hub API")
+# refuse requests addressed to any other site name, so a web page can't reach this API by
+# pointing its own domain at 127.0.0.1 (DNS rebinding)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
+
+# ---------- loading ----------
+_cache = {}
+_lock = threading.Lock()  # requests run in parallel threads; two loads at once break each other's imports
+
+def stamp():
+    """Changes whenever an export zip or a src/ script changes, so cached results refresh."""
+    files = [*(BASE / "data" / "raw").rglob("*.zip"), *(ROOT / "src").glob("*.py")]
+    return max((p.stat().st_mtime for p in files), default=0)
+
+def cached(key, make):
+    with _lock:
+        s = stamp()
+        if key not in _cache or _cache[key][0] != s:
+            _cache[key] = (s, make())
+        return _cache[key][1]
+
+def _load():
+    os.environ["CONTENT_HUB_RAW"] = "data/raw/year"
+    for m in ("data", "patterns"):
+        sys.modules.pop(m, None)
+    try:
+        import data, patterns
+        return data, patterns
+    except SystemExit as e:  # data.py exits with a plain message when exports are missing
+        return None, str(e)
+
+def mods():
+    d, p = cached("mods", _load)
+    if d is None:
+        raise HTTPException(409, p)
+    return d, p
+
+def script(name, *args):
+    """Run one src/ script as its own process (they print and save at import). Returns (stdout, stderr)."""
+    env = {k: v for k, v in os.environ.items() if k != "CONTENT_HUB_RAW"}  # let track.py pick week/
+    r = subprocess.run([sys.executable, *(["-c", name] if "\n" in name else [str(ROOT / "src" / f"{name}.py")]), *args],
+                       capture_output=True, text=True, env=env, cwd=BASE)
+    return r.stdout, r.stderr
+
+def rows(df):
+    """DataFrame -> list of dicts; NaN becomes null (plain json can't hold NaN)."""
+    return json.loads(df.to_json(orient="records"))
+
+def clean(obj):
+    """numpy numbers -> plain, NaN -> null, so FastAPI can send it."""
+    return json.loads(pd.io.json.ujson_dumps(obj))
+
+def day(s):
+    return s.dt.strftime("%Y-%m-%d")
+
+def engagement(v):
+    views = v["Total views"]
+    return (v[["Total likes", "Total comments", "Total shares"]].sum(axis=1) / views.where(views > 0) * 100).round(2)
+
+# ---------- endpoints ----------
+@app.get("/api/home")
+def home():
+    data, pat = mods()
+    o = data.overview.set_index("Date")["Video Views"]
+    fol = data.fol.set_index("Date")["Followers"]
+    last, prev = o.iloc[-28:].sum(), o.iloc[-56:-28].sum()
+    now, week = fol.iloc[-1], fol.iloc[-1] - fol.iloc[-8]
+    weeks_left = max((GOAL_DATE - date.today()).days / 7, 1)  # from today: an old export mustn't make the pace look easier
+
+    def advice():
+        script("recommend")
+        files = sorted((BASE / "data" / "recs").glob("*.json"))
+        return json.loads(files[-1].read_text())["recommendations"] if files else {}
+
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    act = data.act.groupby(data.act["Date"].dt.day_name())["Active followers"].mean().reindex(days).round()
+    weekly = o.resample("W").sum()
+    return clean({
+        "range": [str(o.index.min().date()), str(data.END.date())],
+        "goal": {"followers": now, "goal": GOAL, "by": str(GOAL_DATE),
+                 "per_week_needed": max(GOAL - now, 0) / weeks_left, "last_week": week},
+        "views_year": o.sum(), "views_28d": last, "views_28d_change_pct": (last / prev - 1) * 100 if prev else None,
+        "follower_gain_year": fol.iloc[-1] - fol.iloc[0],
+        "typical_engagement_pct": engagement(pat.v).median(), "videos": len(pat.v),
+        "weekly_views": [{"week": str(d.date()), "views": n} for d, n in weekly.items()],
+        "follower_activity": [{"day": d, "followers": n} for d, n in act.items()],
+        "advice": cached("advice", advice),
+    })
+
+# run track.py in its own process (it needs the week/ export, and data/patterns are loaded once per process)
+# and hand back its tables as JSON. exec into our own dict so its variables survive its SystemExit messages.
+TRACK = """
+import contextlib, io, json, sys
+sys.path.insert(0, SRC)
+g, msg = {"__name__": "__main__"}, None
+with contextlib.redirect_stdout(io.StringIO()):
+    try:
+        exec(compile(open(SRC + "/track.py").read(), "track.py", "exec"), g)
+    except SystemExit as e:
+        msg = str(e).strip()
+out = {"message": msg, "advice_date": g.get("s", {}).get("export_date"), "export_end": str(g["END"].date()) if "END" in g else None}
+if "checks" in g:
+    new = g["new"]
+    out["videos"] = json.loads(new[["title", "age_days", "Total views"] + g["checks"]].to_json(orient="records"))
+    out["hits"] = {c: [int(new[c].sum()), len(new)] for c in g["checks"]}
+    out["tests"] = [g["compare"](g["views"], m, label) or f"{label}: not enough videos yet (need 2+ on each side, have {m.sum()}/{(~m).sum()})"
+                    for label, m in g["tests"]]
+    out["still_growing"] = bool((new["age_days"] < 7).any())
+print(json.dumps(out))
+""".replace("SRC", repr(str(ROOT / "src")))
+
+@app.get("/api/track")
+def track():
+    def make():
+        out, err = script(TRACK)
+        if not out.strip():
+            raise HTTPException(500, (err.strip().splitlines() or ["track.py failed"])[-1])
+        return json.loads(out)
+    return cached("track", make)
+
+@app.get("/api/videos")
+def videos():
+    _, pat = mods()
+    v = pat.v
+    t = pd.DataFrame({"title": v["title"], "posted": day(v["Post time"]), "views": v["Total views"],
+                      "likes": v["Total likes"], "comments": v["Total comments"], "shares": v["Total shares"],
+                      "engagement_pct": engagement(v), "link": v["Video link"]})
+    return rows(t.sort_values("views", ascending=False))
+
+@app.get("/api/patterns")
+def patterns():
+    _, pat = mods()
+    v, views = pat.v, pat.v["Total views"]
+    g = v.groupby(pat.top)[pat.cols].median()
+    f = v.dropna(subset=["followers_per_1k_views"])  # no follower history for posts outside the export range
+    return clean({
+        "top_count": int(pat.top.sum()), "other_count": int((~pat.top).sum()),
+        "differences": [{"what": pat.NAMES[c], "top": g.loc[True, c], "other": g.loc[False, c],
+                         "meaning": pat.verdict(c, pat.link_strength(c))} for c in pat.cols],
+        "followers": rows(pd.DataFrame({"video_id": f["Video link"].str.extract(r"/video/(\d+)")[0], "title": f["title"], "posted": day(f["Post time"]), "views": f["Total views"],
+                                        "followers_per_1k": f["followers_per_1k_views"]})
+                          .sort_values("followers_per_1k", ascending=False)),
+    })
+
+# ---------- Studio per-post data (data/hub.db, filled by ./run.sh import) ----------
+NUMS = ["views", "likes", "comments", "shares", "saves", "avg_watch_s", "full_watch_rate", "kept_3s", "new_followers"]
+
+def drop_second(r):
+    """Second where the most viewers left (biggest one-second fall). Matches Studio's 'stopped watching at 0:0X'."""
+    if len(r) < 2:
+        return None
+    return max(range(1, len(r)), key=lambda i: r[i - 1] - r[i])
+
+def studio():
+    db = BASE / "data" / "hub.db"
+    if not db.exists():
+        raise HTTPException(409, "No Studio data yet. Ask Claude to read Studio, then run ./run.sh import.")
+    con = sqlite3.connect(db)
+    try:
+        df = pd.read_sql("SELECT * FROM posts", con)
+    finally:
+        con.close()
+    df["retention"] = df.pop("retention_json").map(json.loads)
+    df["search_terms"] = df.pop("search_terms_json").map(json.loads)
+    df["drop_second"] = df["retention"].map(drop_second)
+    df["kept_3s"] = df["retention"].map(lambda r: r[3] if len(r) > 3 else None)
+    df["posted"] = pd.to_datetime(df["posted_at"], unit="s", utc=True).dt.tz_convert("America/Los_Angeles").dt.strftime("%Y-%m-%d")
+    df = df.sort_values("posted_at")
+    df["gap_days"] = df["posted_at"].diff() / 86400  # ads count: they're still a post in the feed
+    return df.iloc[::-1]
+
+def opening_advice(p, u, usual_len):
+    """Plain 'what to do' lines for one video. 5-point cutoff: smaller gaps are mostly chance."""
+    k, uk = p.get("kept_3s"), u.get("kept_3s")
+    if k is None or uk is None:
+        return []
+    pc = lambda x: f"{round(x * 100)}%"
+    if k >= uk + 0.05:
+        out = [f"Strong opening: {pc(k)} still watching at 3s (your usual: {pc(uk)}). Reuse this opening."]
+    elif k <= uk - 0.05:
+        return [f"Weak opening: only {pc(k)} still watching at 3s (your usual: {pc(uk)}). Start on your best move in the first second."]
+    else:
+        out = [f"Normal opening ({pc(k)} still watching at 3s)."]
+    if p["full_watch_rate"] <= u["full_watch_rate"] - 0.05:
+        out.append(f"People stayed for the start but left before the end. Try a shorter cut (your usual length: {round(usual_len)}s).")
+    return out
+
+assert opening_advice({"kept_3s": .30, "full_watch_rate": 0}, {"kept_3s": .41, "full_watch_rate": .1}, 15)[0].startswith("Weak")
+assert len(opening_advice({"kept_3s": .52, "full_watch_rate": .02}, {"kept_3s": .41, "full_watch_rate": .1}, 15)) == 2
+assert opening_advice({"kept_3s": .43, "full_watch_rate": .1}, {"kept_3s": .41, "full_watch_rate": .1}, 15) == ["Normal opening (43% still watching at 3s)."]
+
+@app.get("/api/posts")
+def posts():
+    df = studio()
+    return rows(df[["video_id", "posted", "title", "length_s", "is_ad", "drop_second", "gap_days", *NUMS]])
+
+@app.get("/api/posts/{video_id}")
+def post(video_id: str):
+    if not video_id.isdigit():
+        raise HTTPException(400, "bad video id")
+    df = studio()
+    hit = df[df["video_id"] == video_id]
+    if hit.empty:
+        raise HTTPException(404, "That video isn't in the Studio data. Run a new Studio read, then ./run.sh import.")
+    p = rows(hit)[0]
+    base = df[df["is_ad"] == 0]  # ads get paid traffic; they'd skew "your usual"
+    ret = pd.DataFrame(base["retention"].tolist())  # one column per second; shorter videos leave gaps
+    p["usual"] = clean(base[NUMS].median().to_dict())
+    p["usual_retention"] = clean(ret.median().iloc[:len(p["retention"])].round(3).tolist())
+    p["usual_from"] = len(base)
+    p["advice"] = opening_advice(p, p["usual"], base["length_s"].median())
+    return p
+
+# ---------- Plan: 2-week calendar + dance shortlist (plan, shortlist tables in data/hub.db) ----------
+SCHEMAS = [
+    "CREATE TABLE IF NOT EXISTS plan (date TEXT, slot INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, slot))",
+    "CREATE TABLE IF NOT EXISTS shortlist (dance_key TEXT PRIMARY KEY, label TEXT, added_at INTEGER)",
+    # backup dances per day, picked by the weekly planner (./run.sh plan); refilled each run
+    "CREATE TABLE IF NOT EXISTS backups (date TEXT, rank INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, rank))",
+    # every Home swipe and why: read by Claude in the weekly trends read; later, ranking
+    "CREATE TABLE IF NOT EXISTS swipes (dance_key TEXT PRIMARY KEY, music_id TEXT, video_id TEXT, label TEXT, decision TEXT, reason TEXT, at INTEGER, credit TEXT, author TEXT)",
+    "CREATE TABLE IF NOT EXISTS trending (video_id TEXT, author TEXT, caption TEXT, music_id TEXT, music_title TEXT, music_author TEXT, views TEXT, likes TEXT, saves TEXT, posted_at TEXT, tag TEXT)",
+    # typed in on the Competitors page (no crawling: Brian copies the numbers from TikTok himself)
+    "CREATE TABLE IF NOT EXISTS competitors (handle TEXT PRIMARY KEY, followers INTEGER, added_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS competitor_posts (video_id TEXT PRIMARY KEY, handle TEXT, views INTEGER, likes INTEGER, comments INTEGER, shares INTEGER, caption TEXT, sound TEXT, format TEXT, added_at INTEGER)",
+]
+
+def plan_db():
+    con = sqlite3.connect(BASE / "data" / "hub.db")
+    for q in SCHEMAS:
+        con.execute(q)
+    have = {r[1] for r in con.execute("PRAGMA table_info(swipes)")}
+    for c in {"credit", "author"} - have:  # swipes tables made before these columns
+        con.execute(f"ALTER TABLE swipes ADD COLUMN {c} TEXT")
+    import quest
+    quest.migrate(con)
+    return con
+
+def plan_write(sql, args):
+    con = plan_db()
+    try:
+        with con:
+            con.execute(sql, args)
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.get("/api/plan")
+def plan():
+    from dances import dances, dance_key, credit, song
+    df = studio()  # 409s with a plain message when there's no Studio data
+    days = [str(d.date()) for d in pd.date_range(pd.Timestamp.now(tz="America/Los_Angeles").date(), periods=14)]
+    con = plan_db()
+    try:
+        planned = pd.read_sql("SELECT date, slot, dance_key AS key, dance_name AS name FROM plan WHERE date >= ?", con, params=[days[0]])
+        short = pd.read_sql("SELECT dance_key AS key, label FROM shortlist ORDER BY added_at", con)
+        has_ideas = con.execute("SELECT 1 FROM sqlite_master WHERE name = 'ideas'").fetchone()
+        ideas = pd.read_sql("SELECT * FROM ideas", con) if has_ideas else pd.DataFrame()
+        liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
+        comp = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
+        backups = pd.read_sql("SELECT date, rank, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
+        nope = con.execute("SELECT credit, author FROM swipes WHERE decision = 'decline' AND reason = 'Not my style'").fetchall()
+        trend_views = con.execute("SELECT video_id, views FROM trending").fetchall()
+    finally:
+        con.close()
+    posted = df["posted"].value_counts()
+    d = dances(df[df["is_ad"] == 0]) if "music_id" in df else pd.DataFrame(columns=["key"])  # an ad isn't a dance
+    done = dict(zip(d["key"], d["times"]))
+    want = [{"key": dance_key(r.music_id, r.caption, r.author), "label": song(r.music_title, r.music_author),
+             "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author, "source": "Saved"}
+            for r in ideas.itertuples()]
+    # competitor rows keep the song name only; match it to your own sounds so the same dance groups together
+    own = {song(t, a).lower(): m for m, t, a in zip(df["music_id"], df["music_title"], df["music_author"]) if m}
+    want += [{"key": dance_key(own.get(r.sound.lower()) or sound_id(r.sound), r.caption, r.handle), "label": r.sound, "credit": credit(r.caption, r.handle),
+              "video_id": r.video_id, "author": r.handle, "source": "Competitor"} for r in comp.itertuples()]
+    liked = [r | {"credit": r["credit"] or "", "author": r["author"] or "", "source": "Trending"} for r in rows(liked)]
+    keys = {x["key"] for x in liked}
+    want = liked + [w for w in want if w["key"] not in keys]  # ✓ on Home first, newest first
+    seen = set()
+    want = [w for w in want if not (w["key"] in seen or seen.add(w["key"]))]  # one per dance, first one wins
+    for w in want:
+        w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
+        w["planned"] = w["key"] in set(planned["key"])
+    # step 9: rank by what brought you followers before (score 1 = your usual); one reason line each
+    from picker import rank
+    mine = df[df["is_ad"] == 0].assign(credit=lambda x: x["title"].map(credit))
+    mine["key"] = [dance_key(m, t) for m, t in zip(mine["music_id"], mine["title"])]
+    views = {v: count(n) for v, n in trend_views} | dict(zip(comp["video_id"], comp["views"]))
+    rk = rank(mine, [w for w in want if not w["done"]], list(d["key"]), {w["key"] for w in liked},
+              {(c or f"@{a}").lower() for c, a in nope}, views)
+    for x in want:
+        x |= rk.get(x["key"], {"score": 1, "why": "", "tired": False})
+    d = d.assign(**{f: [rk.get(k, {}).get(f) for k in d["key"]] for f in ("score", "why", "tired")})
+    # a video to record from: your best take for a dance you've done, else the idea's video
+    vid = {w["key"]: w["video_id"] for w in want} | dict(zip(d["key"], d.get("best_video_id", [])))
+    planned["video_id"], backups["video_id"] = planned["key"].map(vid), backups["key"].map(vid)
+    why = {k: r["why"] for k, r in rk.items()}
+    planned["why"], backups["why"] = planned["key"].map(why), backups["key"].map(why)
+    return clean({
+        "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
+        "ideas": want,
+        "planned": rows(planned),
+        "backups": rows(backups),
+        "shortlist": rows(short.assign(planned=short["key"].isin(planned["key"]))),
+        "dances": rows(d.sort_values("best_views", ascending=False)),
+    })
+
+# trust boundary: the page sends these, so check them before they reach the database
+def _slot(day: str, slot: int):
+    try:
+        ok = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", day)) and date.fromisoformat(day) and 0 <= slot <= 2
+    except ValueError:  # 2026-02-31
+        ok = False
+    if not ok:
+        raise HTTPException(400, "bad day or slot")
+
+async def _dance(request: Request):
+    body = await request.json()
+    key, name = body.get("key"), body.get("name")
+    if not (isinstance(key, str) and isinstance(name, str) and 0 < len(key) <= 100 and 0 < len(name) <= 200):
+        raise HTTPException(400, "bad dance")
+    return key, name
+
+@app.put("/api/plan/{day}/{slot}")
+async def plan_put(day: str, slot: int, request: Request):
+    _slot(day, slot)
+    return plan_write("INSERT OR REPLACE INTO plan VALUES (?, ?, ?, ?)", (day, slot, *await _dance(request)))
+
+@app.delete("/api/plan/{day}/{slot}")
+def plan_delete(day: str, slot: int):
+    _slot(day, slot)
+    return plan_write("DELETE FROM plan WHERE date = ? AND slot = ?", (day, slot))
+
+# a spot on the calendar: a day's slot (plan) or a day's backup (backups); table/column names come only from here
+SPOTS = {"plan": ("plan", "slot", 2), "backup": ("backups", "rank", 9)}
+
+def _spot(s):
+    if not (isinstance(s, dict) and s.get("kind") in SPOTS and isinstance(s.get("date"), str)
+            and type(s.get("n")) is int and 0 <= s["n"] <= SPOTS[s["kind"]][2]):
+        raise HTTPException(400, "bad spot")
+    _slot(s["date"], 0)  # date check
+    return (*SPOTS[s["kind"]][:2], s["date"], s["n"])
+
+@app.post("/api/plan/move")
+async def plan_move(request: Request):
+    """Move a planned or backup dance to another spot. A dance already there swaps into the old spot."""
+    body = await request.json()
+    src, dst = _spot(body.get("from")), _spot(body.get("to"))
+    if src == dst:
+        return {"ok": True}
+    con = plan_db()
+    try:
+        with con:  # one transaction: a failed move changes nothing
+            at = lambda t, c, d, n: con.execute(f"SELECT dance_key, dance_name FROM {t} WHERE date = ? AND {c} = ?", (d, n)).fetchone()
+            a, b = at(*src), at(*dst)
+            if not a:
+                raise HTTPException(404, "nothing to move there")
+            for t, c, d, n in (src, dst):
+                con.execute(f"DELETE FROM {t} WHERE date = ? AND {c} = ?", (d, n))
+            con.execute(f"INSERT INTO {dst[0]} VALUES (?, ?, ?, ?)", (*dst[2:], *a))
+            if b:
+                con.execute(f"INSERT INTO {src[0]} VALUES (?, ?, ?, ?)", (*src[2:], *b))
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.post("/api/plan/fill")
+def plan_fill():
+    """Fill next week's empty slots: 1 new dance + 2 refilms a day, then 1 new + 1 refilm backup a day.
+    New: your list, ✓ Trending, Saved, Competitor. Refilms: your list, then your best dances not posted in 14 days.
+    Never touches a slot you filled."""
+    from planner import fill, next_week
+    p, days = plan(), next_week()
+    done = {d["key"] for d in p["dances"]}
+    cut = time.time() - 14 * 86400
+    named = lambda i: i | {"label": f"{i['label']}, dc {i['credit']}" if i["credit"] else i["label"]}  # same song, other dance
+    best = lambda xs: sorted(xs, key=lambda x: -(x.get("score") or 0))  # step 9 picker score
+    new = [s for s in p["shortlist"] if s["key"] not in done] + best(named(i) for i in p["ideas"] if not i["done"])
+    old = [s for s in p["shortlist"] if s["key"] in done] + best(
+        d for d in p["dances"] if d["last_posted"] < cut - (14 * 86400 if d["tired"] else 0))  # tired: rest 4 weeks
+    added, extra = fill(days, {(x["date"], x["slot"]): x["key"] for x in p["planned"]}, new, old)
+    con = plan_db()
+    try:
+        with con:
+            con.executemany("INSERT INTO plan VALUES (?, ?, ?, ?)", added)
+            con.execute(f"DELETE FROM backups WHERE date IN ({','.join('?' * len(days))})", days)
+            con.executemany("INSERT INTO backups VALUES (?, ?, ?, ?)",
+                            [(d, i, b["key"], b["label"]) for d, bs in extra.items() for i, b in enumerate(bs)])
+    finally:
+        con.close()
+    return {"added": len(added), "days": days}
+
+@app.get("/api/weekly")
+def weekly():
+    """The weekly email text: this week's results + how much of next week is planned."""
+    from planner import email, next_week
+    p, days = plan(), next_week()
+    week = [str(date.fromisoformat(d) - pd.Timedelta(days=7)) for d in days]  # this Mon..Sun
+    df = studio()
+    w = df[(df["is_ad"] == 0) & df["posted"].isin(week)]
+    best = w.sort_values("views").iloc[-1] if len(w) else None
+    results = {"from": week[0], "to": week[-1], "posts": len(w), "days_posted": w["posted"].nunique(),
+               "views": int(w["views"].sum()), "new_followers": int(w["new_followers"].fillna(0).sum()),
+               "best_title": re.split(r"[#|]", best["title"])[0].strip() if best is not None else "", "best_views": int(best["views"]) if best is not None else 0}
+    return {"text": email(days, p["planned"], results, {d["key"] for d in p["dances"]})}
+
+@app.post("/api/shortlist")
+async def shortlist_add(request: Request):
+    key, name = await _dance(request)
+    return plan_write("INSERT OR IGNORE INTO shortlist VALUES (?, ?, strftime('%s','now'))", (key, name))
+
+@app.delete("/api/shortlist")
+async def shortlist_remove(request: Request):
+    key, _ = await _dance(request)
+    return plan_write("DELETE FROM shortlist WHERE dance_key = ?", (key,))
+
+SONG_REASON = "Don't like the song"  # declining with this hides every dance on that sound
+
+@app.get("/api/trending")
+def trending():
+    """Home swipe cards: trending dances (hashtag read) you haven't done, planned, added or swiped. Most total views first."""
+    from dances import dances, dance_key, credit, song
+    df = studio()
+    con = plan_db()
+    try:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'trending'").fetchone():
+            return {"cards": []}
+        t = pd.read_sql("SELECT * FROM trending", con).drop_duplicates("video_id")
+        sw = pd.read_sql("SELECT dance_key, music_id, reason FROM swipes", con)
+        taken = {r[0] for r in con.execute("SELECT dance_key FROM shortlist UNION SELECT dance_key FROM plan")}
+    finally:
+        con.close()
+    done = set(dances(df[df["is_ad"] == 0])["key"]) if "music_id" in df else set()
+    for c in ("views", "likes", "saves", "posted_at"):
+        t[c] = pd.to_numeric(t[c], errors="coerce").fillna(0).astype(int)
+    t["key"] = [dance_key(m, c, a) for m, c, a in zip(t["music_id"], t["caption"], t["author"])]
+    bad_songs = set(sw.loc[sw["reason"] == SONG_REASON, "music_id"])
+    t = t[~t["key"].isin(done | taken | set(sw["dance_key"])) & ~t["music_id"].isin(bad_songs)]
+    g = t.groupby("key").agg(videos=("video_id", "size"), total=("views", "sum"), newest=("posted_at", "max"))
+    top = t.sort_values("views", ascending=False).drop_duplicates("key").set_index("key").join(g)
+    now = time.time()  # epoch seconds, same as posted_at (a naive Timestamp is read as UTC: hours off)
+    cards = [{"key": k, "label": song(r.music_title, r.music_author), "credit": credit(r.caption, r.author),
+              "video_id": r.video_id, "music_id": r.music_id, "author": r.author, "views": r.views, "likes": r.likes,
+              "saves": r.saves, "saves_per_1k": round(r.saves / r.views * 1000) if r.views else 0,
+              "days_ago": int((now - r.posted_at) // 86400), "videos": int(r.videos), "total": int(r.total),
+              "newest_days": int((now - r.newest) // 86400)}  # for the date filter: any video this recent
+             for k, r in top.sort_values("total", ascending=False).iterrows()]
+    return clean({"cards": cards})
+
+@app.post("/api/swipe")
+async def swipe(request: Request):
+    b = await request.json()
+    key, name = await _dance(request)
+    decision, reason = b.get("decision"), b.get("reason") or ""
+    vid, mid = str(b.get("video_id", ""))[:30], str(b.get("music_id", ""))[:30]
+    if decision not in ("accept", "decline") or not isinstance(reason, str) or len(reason) > 300:
+        raise HTTPException(400, "bad swipe")
+    from dances import credit
+    con = plan_db()
+    try:
+        # poster + dc credit from our own read, not the page, so Plan's slides can show them after next week's read
+        found = con.execute("SELECT caption, author FROM trending WHERE video_id = ?", (vid,)).fetchone() or ("", "")
+        with con:  # an accept shows up in Plan's "Dances I want to do" slides (plan() reads accepted swipes)
+            con.execute("INSERT OR REPLACE INTO swipes VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'), ?, ?)",
+                        (key, mid, vid, name, decision, reason, credit(found[0], found[1]), found[1]))
+    finally:
+        con.close()
+    return {"ok": True}
+
+# ---------- typed-in data: trending links + competitors (no automated TikTok reads) ----------
+from inbox import LINK, kind_of, out_name  # shared with the Downloads auto-import
+def sound_id(sound):
+    """Typed-in posts have no TikTok music id; the song name stands in, so the same song groups together."""
+    return "song:" + " ".join(sound.lower().split())
+
+def count(x):
+    """'1.2M' / '45.3K' / '1,234' / 12 -> int, as TikTok shows them. None when it isn't a count."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([KkMm]?)", str(x).replace(",", "").strip())
+    return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+assert count("1.2M") == 1_200_000 and count("45.3K") == 45_300 and count("1,234") == 1234 and count(7) == 7
+assert count("") is None and count("-5") is None and count("1e9") is None
+
+def _text(b, k, n, need=True):
+    v = b.get(k, "")
+    if not isinstance(v, str) or len(v) > n or (need and not v.strip()):
+        raise HTTPException(400, f"bad {k}")
+    return " ".join(v.split())
+
+def _link(b):
+    m = LINK.search(b.get("link", "") if isinstance(b.get("link"), str) else "")
+    if not m:
+        raise HTTPException(400, "Paste the full TikTok link, like https://www.tiktok.com/@name/video/123...")
+    return m.groups()
+
+@app.post("/api/trending")
+async def trending_add(request: Request):
+    """A dance you saw on TikTok: paste its link + song name and it becomes a Home card."""
+    b = await request.json()
+    author, vid = _link(b)
+    sound, caption = _text(b, "song", 200), _text(b, "credit", 100, need=False)
+    return plan_write("INSERT INTO trending VALUES (?, ?, ?, ?, ?, '', '0', '0', '0', strftime('%s','now'), 'manual')",
+                      (vid, author, f"dc: {caption}" if caption and "dc" not in caption.lower() else caption, sound_id(sound), sound))
+
+FORMATS = ["1-person", "2-person", "trend", "original"]
+
+@app.get("/api/competitors")
+def competitors():
+    con = plan_db()
+    try:
+        acc = pd.read_sql("SELECT handle, followers FROM competitors ORDER BY added_at", con)
+        p = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
+    finally:
+        con.close()
+    out = [{**a, "posts": rows(p[p["handle"] == a["handle"]])} for a in rows(acc)]
+    # format vs the rest, across all their posts; 2+ on each side or it's just one lucky video
+    comp = []
+    for f in FORMATS:
+        m = p["format"] == f
+        if m.sum() >= 2 and (~m).sum() >= 2:
+            x = p.loc[m, "views"].median() / max(p.loc[~m, "views"].median(), 1)
+            more = f"{x:.1f}x the views of" if x >= 1 else f"{1 / x:.1f}x fewer views than"
+            comp.append(f"Their {f} videos get {more} their other videos ({m.sum()} vs {(~m).sum()} posts).")
+    return clean({"accounts": out, "formats": FORMATS, "compare": comp})
+
+@app.post("/api/competitors")
+async def competitor_add(request: Request):
+    b = await request.json()
+    handle = _text(b, "handle", 40).lstrip("@")
+    n = count(b.get("followers", ""))
+    if not re.fullmatch(r"[\w.]{1,40}", handle) or n is None:
+        raise HTTPException(400, "Type the handle (like merei.555) and followers (like 45.3K).")
+    # named columns: the quest added read_at; an update keeps it and added_at
+    return plan_write("INSERT INTO competitors (handle, followers, added_at) VALUES (?, ?, strftime('%s','now')) "
+                      "ON CONFLICT(handle) DO UPDATE SET followers = excluded.followers", (handle, n))
+
+@app.delete("/api/competitors/{handle}")
+def competitor_remove(handle: str):
+    con = plan_db()
+    try:
+        with con:
+            con.execute("DELETE FROM competitor_posts WHERE handle = ?", (handle,))
+            con.execute("DELETE FROM competitors WHERE handle = ?", (handle,))
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.post("/api/competitor_posts")
+async def competitor_post_add(request: Request):
+    b = await request.json()
+    handle, vid = _link(b)
+    nums = [count(b.get(k, "0") or "0") for k in ("views", "likes", "comments", "shares")]
+    if None in nums or b.get("format") not in FORMATS:
+        raise HTTPException(400, "Numbers like 1.2M or 45K, and pick a format.")
+    con = plan_db()
+    try:
+        if not con.execute("SELECT 1 FROM competitors WHERE handle = ?", (handle,)).fetchone():
+            raise HTTPException(400, f"That link is from @{handle}. Add @{handle} as a competitor first.")
+        with con:
+            con.execute("INSERT OR REPLACE INTO competitor_posts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))",
+                        (vid, handle, *nums, _text(b, "caption", 300, need=False), _text(b, "sound", 200), b["format"]))
+    finally:
+        con.close()
+    return {"ok": True}
+
+@app.delete("/api/competitor_posts/{video_id}")
+def competitor_post_remove(video_id: str):
+    return plan_write("DELETE FROM competitor_posts WHERE video_id = ?", (video_id,))
+
+@app.get("/api/quest")
+def quest_steps():
+    """This week's quest: pages Brian opens so Claude can read them. The page polls this to tick steps off."""
+    import quest
+    con = plan_db()
+    try:
+        return {"week": quest.week(), "steps": quest.steps(con)}
+    finally:
+        con.close()
+
+# ---------- upload ----------
+MAX_BYTES = 200 * 1024 * 1024
+
+@app.post("/api/upload")
+async def upload(request: Request, range: str, name: str = ""):
+    """Body = the raw zip bytes. Never uses the uploaded file name as a path."""
+    # other sites can't add custom headers without a CORS OK we never give, so this blocks cross-site uploads
+    if request.headers.get("x-content-hub") != "1":
+        raise HTTPException(403, "Upload from the Content Hub page only.")
+    if range not in ("year", "week"):
+        raise HTTPException(400, "range must be year or week")
+    body = await request.body()
+    if len(body) > MAX_BYTES:
+        raise HTTPException(413, f"{name}: too big for a TikTok Studio export.")
+    kind = kind_of(body)
+    if kind is None:
+        raise HTTPException(400, f"{name}: not a TikTok Studio export (no Content/Overview/FollowerHistory/Viewers CSV inside).")
+    saved = out_name(kind, name)
+    if not saved:  # data.py reads the range start from this date
+        raise HTTPException(400, f"{name}: keep TikTok's file name, it holds the start date (Overview_2026-11-12_...).")
+    out = BASE / "data" / "raw" / range
+    out.mkdir(parents=True, exist_ok=True)
+    (out / saved).write_bytes(body)
+    return {"saved": f"data/raw/{range}/{saved}"}

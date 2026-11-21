@@ -20,7 +20,7 @@ for head, items in s["recommendations"].items():
 if new.empty:
     raise SystemExit("\nNothing to score yet: no videos posted since then.")
 
-new["age_days"] = (END - new["Post time"]).dt.days
+new["age_days"] = (END - new["Post time"]).dt.days.clip(lower=0)  # Studio posts can be newer than the export
 new["views>median"] = new["Total views"] > s["median_views"]
 new["shares>=target"] = new["shares_per_1k"] >= s["shares_per_1k_target"]
 new["followers>median"] = new["followers_per_1k_views"] > s["median_followers_per_1k"]
@@ -35,9 +35,8 @@ if (new["age_days"] < 7).any():
 print("\n== Test results (median views among new videos) ==")
 views = new["Total views"]
 tests = []
-for col, unit in (("caption_len", "chars"), ("days_since_last_post", "days gap")):
-    hi, lo = s[col]
-    tests.append((f"{col} near {hi:g} {unit} (vs near {lo:g})", (new[col] - hi).abs() < (new[col] - lo).abs()))
+hi, lo = s["caption_len"]
+tests.append((f"caption_len near {hi:g} chars (vs near {lo:g})", (new["caption_len"] - hi).abs() < (new["caption_len"] - lo).abs()))
 if s["common_tags"]:
     tests.append((f"Using {' '.join(s['common_tags'])}", tags.loc[new.index].apply(lambda t: set(s["common_tags"]) <= set(t))))
 tests.append(("Posted Sat/Sun", new["weekend"]))

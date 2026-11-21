@@ -4,7 +4,7 @@ Rules read the numbers each run; nothing is hardcoded to one export."""
 import json, os
 import pandas as pd
 from data import act, fol, END
-from patterns import v, views, tags, top, corr, NAMES
+from patterns import v, views, tags, top, link_strength, NAMES, TESTABLE, bucket, TOP_N
 
 # column -> (what to do if more goes with more views, what to do if less does; None = don't advise)
 LEVERS = {
@@ -13,17 +13,11 @@ LEVERS = {
     "likes_per_1k": ("End on a moment people want to like (a big move, a funny face, a loop)", None),
     "comments_per_1k": ("Give people a reason to comment: ask a question in the caption", None),
     "shares_per_1k": ("Make videos people want to send to a friend: tag-a-friend dances, duets, 'you vs me' hooks", None),
-    "days_since_last_post": ("Space your posts out more", "Post more often"),
+    # Studio-only columns; skipped when patterns.py runs on exports
+    "kept_3s": ("Hook viewers in the first second: open on your best move, not a slow start", None),
+    "full_watch_rate": ("Make it easy to watch to the end: tighter cuts, end on a loop", None),
+    # no gap_days lever: posts are almost all <1.5 days apart, too little spread to advise on
 }
-TESTABLE = {"caption_len", "hashtags", "days_since_last_post"}  # you set these directly; rates are outcomes
-
-def bucket(c):
-    """Rank correlation -> act on it, test it, or skip it."""
-    if pd.isna(c) or abs(c) < 0.2:
-        return "skip"
-    return "act" if abs(c) >= 0.4 else "test"
-
-assert [bucket(x) for x in (0.5, -0.45, 0.3, -0.25, 0.1, float("nan"))] == ["act", "act", "test", "test", "skip", "skip"]
 
 post, improve, test = [], [], []
 med = lambda s: s.median()
@@ -42,7 +36,8 @@ post.append("Do a part 2 or a new take on your biggest hits: " + "; ".join(
 hours = act.groupby("Hour")["Active followers"].mean().nlargest(3).index.sort_values()
 day = act.groupby(act["Date"].dt.day_name())["Active followers"].mean().idxmax()
 # shortcut: activity is one week only; re-check with each new export
-post.append(f"Post around {hours[0]}:00-{hours[-1] + 1}:00. That's when most of your followers are on TikTok. "
+at = [f"{h}:00" for h in hours]  # listed, not a range: the busiest hours can be far apart (9, 13, 20)
+post.append(f"Post at {', '.join(at[:-1])} or {at[-1]}. That's when most of your followers are on TikTok. "
             f"{day} is their busiest day.")
 quiet = (fol["Date"].max() - v["Post time"].max()).days
 if quiet > 14:
@@ -51,14 +46,17 @@ if quiet > 14:
                    f"and the newest one that did is {quiet} days old.")
 
 # IMPROVE (strong link) / TEST (weak link)
-for col, (more, less) in LEVERS.items():
-    c, b = corr(v[col], views), bucket(corr(v[col], views))
+for col, (more, less) in ((c, l) for c, l in LEVERS.items() if c in v):
+    c = link_strength(col)
+    b = bucket(c)
     t, r = med(top_v[col]), med(rest_v[col])
     action = more if c > 0 else less
+    pc = "%" if NAMES[col].startswith("%") else ""  # "14.1% who watched", not "14.1 % who watched"
+    sp = "" if pc else " "
     if b == "act" and action:  # never advise fewer likes/comments/shares: they're outcomes
-        improve.append(f"{action}. Your 3 biggest videos had {t:g} {NAMES[col]}; your other videos had {r:g}.")
+        improve.append(f"{action}. Your {TOP_N} biggest videos had {t:g}{sp}{NAMES[col]}; your other videos had {r:g}{pc}.")
     elif b == "test" and col in TESTABLE and t != r:  # same median on both sides = nothing to test
-        test.append(f"Not sure yet if {NAMES[col]} matters. Your 3 biggest videos had {t:g}, the others {r:g}. "
+        test.append(f"Not sure yet if {NAMES[col]} matters. Your {TOP_N} biggest videos had {t:g}, the others {r:g}. "
                     f"Next 4 videos: make 2 with about {t:g} {NAMES[col]} and 2 with about {r:g}, then compare views.")
 
 if med(top_v["followers_per_1k_views"]) < typical_fol:
@@ -81,7 +79,7 @@ for head, items in (("WHAT TO POST", post), ("WHAT TO FIX", improve), ("WHAT TO 
     print("\n".join(f"{i}. {s}" for i, s in enumerate(items, 1)) or "Nothing from this data.")
     print()
 print(f"Based on {len(v)} of your videos. These are educated guesses from your own numbers: "
-      f"try them, then check the Track tab.")
+      f"try them, then run ./run.sh track after your next export.")
 
 # step 6: save targets so track.py can score the next videos against them
 snap = {
@@ -91,7 +89,6 @@ snap = {
     "median_followers_per_1k": float(med(v["followers_per_1k_views"])),
     "shares_per_1k_target": float(med(top_v["shares_per_1k"])),
     "caption_len": [float(med(top_v["caption_len"])), float(med(rest_v["caption_len"]))],
-    "days_since_last_post": [float(med(top_v["days_since_last_post"])), float(med(rest_v["days_since_last_post"]))],
     "common_tags": always,
     "recommendations": {"post": post, "improve": improve, "test": test},
 }

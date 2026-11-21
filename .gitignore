@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 .DS_Store
 data/plans/
+data/hub.db
+data/inbox.log
+data/inbox.err
+demo/data/
