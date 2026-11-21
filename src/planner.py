@@ -1,4 +1,5 @@
 """Weekly planner (README v2 step 8): fill next week's empty Plan slots, pick backups, and write the weekly email.
+Each day: 1 new dance to learn + refilms of old dances (Brian learns 1-2 new a day, mostly refilms).
 Pure functions; api/main.py feeds them the Plan data. Run it all with ./run.sh plan."""
 from datetime import date, timedelta
 
@@ -10,25 +11,38 @@ def next_week(today=None):
     return [str(mon + timedelta(days=i)) for i in range(7)]
 
 
-def fill(days, taken, picks, per_day=3, backups=2):
-    """taken: {(date, slot): key} already on the calendar (never touched). picks: [{key, label}] best first.
-    Each dance is used once in the week. Returns (new slots [(date, slot, key, label)], {date: [pick, ...]})."""
-    used = set(taken.values())
-    left = [p for p in picks if not (p["key"] in used or used.add(p["key"]))]  # drops repeats too
-    new, extra = [], {}
+def fill(days, taken, new, old, per_day=3, new_per_day=1):
+    """taken: {(date, slot): key} already on the calendar (never touched). new / old: [{key, label}] best first.
+    A day gets new_per_day new dances (counting new ones already placed), the rest old. Each dance once a week.
+    Returns (new slots [(date, slot, key, label)], {date: [1 new backup, 1 old backup]})."""
+    used, new_keys = set(taken.values()), {p["key"] for p in new}
+    new, old = list(new), list(old)
+
+    def take(lst):
+        while lst:
+            p = lst.pop(0)
+            if p["key"] not in used:
+                used.add(p["key"])
+                return p
+
+    added = []
     for d in days:
+        want_new = new_per_day - sum(k in new_keys for (dd, _), k in taken.items() if dd == d)
         for s in range(per_day):
-            if (d, s) not in taken and left:
-                p = left.pop(0)
-                new.append((d, s, p["key"], p["label"]))
-    for d in days:  # backups come after every slot is filled, so they never steal a slot's dance
-        extra[d], left = left[:backups], left[backups:]
-    return new, extra
+            if (d, s) in taken:
+                continue
+            p = (want_new > 0 and take(new)) or take(old) or take(new)  # run out of one kind: use the other
+            want_new -= p is not None and p["key"] in new_keys
+            if p:
+                added.append((d, s, p["key"], p["label"]))
+    extra = {d: [p for p in (take(new), take(old)) if p] for d in days}  # after the slots, so they never steal one
+    return added, extra
 
 
-def email(days, planned, extra, results):
-    """Plain text: this week's results, then next week's plan with backups."""
+def email(days, planned, extra, results, links, old_keys):
+    """Plain text: this week's results, then next week's plan with a link to each dance."""
     day = lambda d: date.fromisoformat(d).strftime("%a %b %-d")
+    line = lambda what, key, name: f"  {what}{' (refilm)' if key in old_keys else ' (new)'}: {name}" + (f"\n    {links[key]}" if key in links else "")
     r = results
     out = [f"This week ({day(r['from'])} - {day(r['to'])})"]
     if r["posts"]:
@@ -38,17 +52,20 @@ def email(days, planned, extra, results):
         out.append("- No posts in the Studio data yet. Do the weekly quest, then run this again.")
     out += ["", "Next week"]
     for d in days:
-        out.append(f"{day(d)}: " + ("; ".join(x["name"] for x in sorted(planned.get(d, []), key=lambda x: x["slot"])) or "nothing planned"))
-        if extra.get(d):
-            out.append("  backups: " + "; ".join(p["label"] for p in extra[d]))
+        out.append(day(d) + ("" if planned.get(d) else ": nothing planned"))
+        out += [line("Dance", x["key"], x["name"]) for x in sorted(planned.get(d, []), key=lambda x: x["slot"])]
+        out += [line("Backup", b["key"], b["name"]) for b in extra.get(d, [])]
     return "\n".join(out)
 
 
 # self-check
 assert next_week(date(2026, 11, 20)) == [f"2026-11-{x}" for x in range(23, 30)]  # Friday -> next Mon..Sun
 assert next_week(date(2026, 11, 23))[0] == "2026-11-30"  # on a Monday it plans the week after
-_p = [{"key": k, "label": k.upper()} for k in "abcdefgh"]
-_new, _extra = fill(["d1", "d2"], {("d1", 1): "b"}, _p, per_day=2, backups=1)
-assert _new == [("d1", 0, "a", "A"), ("d2", 0, "c", "C"), ("d2", 1, "d", "D")], _new  # your slot and its dance stay put
-assert _extra == {"d1": [_p[4]], "d2": [_p[5]]}, _extra
-assert fill(["d1"], {}, _p[:1] * 3, per_day=3)[0] == [("d1", 0, "a", "A")]  # a dance listed twice is used once
+_n = [{"key": k, "label": k} for k in "abcd"]
+_o = [{"key": k, "label": k} for k in "wxyz"]
+_add, _ex = fill(["d1", "d2"], {("d2", 0): "b"}, _n, _o, per_day=2)
+assert _add == [("d1", 0, "a", "a"), ("d1", 1, "w", "w"), ("d2", 1, "x", "x")], _add  # d2 already has a new one (b)
+assert _ex == {"d1": [_n[2], _o[2]], "d2": [_n[3], _o[3]]}, _ex
+assert fill(["d1"], {}, [], _o[:1] + _o[:1], per_day=3)[0] == [("d1", 0, "w", "w")]  # out of both: slots stay empty
+assert "(refilm): w\n    L" in email(["2026-11-23"], {"2026-11-23": [{"slot": 0, "key": "w", "name": "w"}]}, {},
+                                    {"from": "2026-11-16", "to": "2026-11-22", "posts": 0}, {"w": "L"}, {"w"})

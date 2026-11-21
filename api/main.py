@@ -330,30 +330,33 @@ def plan_delete(day: str, slot: int):
 
 @app.post("/api/plan/fill")
 def plan_fill():
-    """Fill next week's empty slots (3 a day) + 2 backups a day. Order: your list, ✓ Trending, Saved, Competitor,
-    then remakes of your best dances not posted in the last 14 days. Never touches a slot you filled."""
+    """Fill next week's empty slots: 1 new dance + 2 refilms a day, then 1 new + 1 refilm backup a day.
+    New: your list, ✓ Trending, Saved, Competitor. Refilms: your list, then your best dances not posted in 14 days.
+    Never touches a slot you filled."""
     from planner import fill, next_week
     p, days = plan(), next_week()
+    done = {d["key"] for d in p["dances"]}
     cut = time.time() - 14 * 86400
     named = lambda i: i | {"label": f"{i['label']}, dc {i['credit']}" if i["credit"] else i["label"]}  # same song, other dance
-    picks = ([s for s in p["shortlist"] if not s["planned"]] + [named(i) for i in p["ideas"] if not i["done"] and not i["planned"]]
-             + [d for d in p["dances"] if d["last_posted"] < cut])
-    new, extra = fill(days, {(x["date"], x["slot"]): x["key"] for x in p["planned"]}, picks)
+    new = [s for s in p["shortlist"] if s["key"] not in done] + [named(i) for i in p["ideas"] if not i["done"]]
+    old = [s for s in p["shortlist"] if s["key"] in done] + [d for d in p["dances"] if d["last_posted"] < cut]
+    added, extra = fill(days, {(x["date"], x["slot"]): x["key"] for x in p["planned"]}, new, old)
     con = plan_db()
     try:
         with con:
-            con.executemany("INSERT INTO plan VALUES (?, ?, ?, ?)", new)
+            con.executemany("INSERT INTO plan VALUES (?, ?, ?, ?)", added)
             con.execute(f"DELETE FROM backups WHERE date IN ({','.join('?' * len(days))})", days)
             con.executemany("INSERT INTO backups VALUES (?, ?, ?, ?)",
                             [(d, i, b["key"], b["label"]) for d, bs in extra.items() for i, b in enumerate(bs)])
     finally:
         con.close()
-    return {"added": len(new), "days": days}
+    return {"added": len(added), "days": days}
 
 @app.get("/api/weekly")
 def weekly():
-    """The weekly email text: this week's results + next week's plan."""
+    """The weekly email text: this week's results + next week's plan, with a TikTok link per dance."""
     from planner import email, next_week
+    from quest import me
     p, days = plan(), next_week()
     week = [str(date.fromisoformat(d) - pd.Timedelta(days=7)) for d in days]  # this Mon..Sun
     df = studio()
@@ -362,13 +365,15 @@ def weekly():
     results = {"from": week[0], "to": week[-1], "posts": len(w), "days_posted": w["posted"].nunique(),
                "views": int(w["views"].sum()), "new_followers": int(w["new_followers"].fillna(0).sum()),
                "best_title": re.split(r"[#|]", best["title"])[0].strip() if best is not None else "", "best_views": int(best["views"]) if best is not None else 0}
-    planned = {}
+    planned, extra = {}, {}
     for x in p["planned"]:
         planned.setdefault(x["date"], []).append(x)
-    extra = {}
     for b in p["backups"]:
-        extra.setdefault(b["date"], []).append({"label": b["name"]})
-    return {"text": email(days, planned, extra, results)}
+        extra.setdefault(b["date"], []).append(b)
+    video = "https://www.tiktok.com/@{}/video/{}"
+    links = {i["key"]: video.format(i["author"], i["video_id"]) for i in p["ideas"] if i["video_id"] and i["author"]}
+    links |= {d["key"]: video.format(me(), d["best_video_id"]) for d in p["dances"]}  # a refilm links to your best take
+    return {"text": email(days, planned, extra, results, links, {d["key"] for d in p["dances"]})}
 
 @app.post("/api/shortlist")
 async def shortlist_add(request: Request):
