@@ -1,7 +1,7 @@
 """Dashboard API: JSON for the React app in web/. Reads the scripts in src/.
 Run from the project root: uvicorn api.main:app --host 127.0.0.1 --port 8000  (or ./run.sh)
 Localhost only; your data is not sent anywhere."""
-import io, json, os, re, sqlite3, subprocess, sys, threading, time, zipfile
+import json, os, re, sqlite3, subprocess, sys, threading, time
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -386,8 +386,7 @@ async def swipe(request: Request):
     return {"ok": True}
 
 # ---------- typed-in data: trending links + competitors (no automated TikTok reads) ----------
-LINK = re.compile(r"tiktok\.com/@([\w.]{1,40})/video/(\d{5,25})")
-
+from inbox import LINK, kind_of, out_name  # shared with the Downloads auto-import
 def sound_id(sound):
     """Typed-in posts have no TikTok music id; the song name stands in, so the same song groups together."""
     return "song:" + " ".join(sound.lower().split())
@@ -399,7 +398,6 @@ def count(x):
 
 assert count("1.2M") == 1_200_000 and count("45.3K") == 45_300 and count("1,234") == 1234 and count(7) == 7
 assert count("") is None and count("-5") is None and count("1e9") is None
-assert LINK.search("https://www.tiktok.com/@merei.555/video/7312345678901234567?lang=en").groups() == ("merei.555", "7312345678901234567")
 
 def _text(b, k, n, need=True):
     v = b.get(k, "")
@@ -486,7 +484,6 @@ def competitor_post_remove(video_id: str):
     return plan_write("DELETE FROM competitor_posts WHERE video_id = ?", (video_id,))
 
 # ---------- upload ----------
-KINDS = {"Content": "Content.csv", "Overview": "Overview.csv", "Followers": "FollowerHistory.csv", "Viewers": "Viewers.csv"}
 MAX_BYTES = 200 * 1024 * 1024
 
 @app.post("/api/upload")
@@ -500,21 +497,13 @@ async def upload(request: Request, range: str, name: str = ""):
     body = await request.body()
     if len(body) > MAX_BYTES:
         raise HTTPException(413, f"{name}: too big for a TikTok Studio export.")
-    f = io.BytesIO(body)
-    kind = None
-    if zipfile.is_zipfile(f):
-        names = zipfile.ZipFile(f).namelist()
-        kind = next((k for k, csv in KINDS.items() if csv in names), None)
+    kind = kind_of(body)
     if kind is None:
         raise HTTPException(400, f"{name}: not a TikTok Studio export (no Content/Overview/FollowerHistory/Viewers CSV inside).")
-    if kind == "Overview":
-        m = re.search(r"\d{4}-\d{2}-\d{2}", name)
-        if not m:  # data.py reads the range start from this date
-            raise HTTPException(400, f"{name}: keep TikTok's file name, it holds the start date (Overview_2026-11-12_...).")
-        out_name = f"Overview_{m.group()}_upload.zip"
-    else:
-        out_name = f"{kind}_{date.today()}.zip"  # dated, so old Content exports stay and get merged
+    saved = out_name(kind, name)
+    if not saved:  # data.py reads the range start from this date
+        raise HTTPException(400, f"{name}: keep TikTok's file name, it holds the start date (Overview_2026-11-12_...).")
     out = ROOT / "data" / "raw" / range
     out.mkdir(parents=True, exist_ok=True)
-    (out / out_name).write_bytes(body)
-    return {"saved": f"data/raw/{range}/{out_name}"}
+    (out / saved).write_bytes(body)
+    return {"saved": f"data/raw/{range}/{saved}"}

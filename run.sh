@@ -7,14 +7,37 @@
 #   ./run.sh track        did the last advice work? (uses the past-7-days export)
 #   ./run.sh check        self-check the dashboard's safety rules (writes nothing)
 #   ./run.sh import       load Studio per-post reads (data/raw/studio/) into data/hub.db
+#   ./run.sh inbox        import new Studio zips from ~/Downloads + phone links (iCloud Content Hub/inbox)
+#   ./run.sh inbox-on     run "inbox" by itself whenever those folders change (inbox-off stops it)
 set -e
 cd "$(dirname "$0")"
 case "${1:-}" in
   analyze|recommend|track) exec python3 "src/$1.py" "${@:2}" ;;
   check) exec python3 api/check.py ;;
   import) exec python3 src/studio_import.py ;;
+  inbox) exec python3 src/inbox.py ;;
+  inbox-on|inbox-off)
+    PLIST=~/Library/LaunchAgents/com.contenthub.inbox.plist
+    INBOX=~/"Library/Mobile Documents/com~apple~CloudDocs/Content Hub/inbox"
+    launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+    if [ "$1" = inbox-off ]; then rm -f "$PLIST"; echo "Auto-import off."; exit 0; fi
+    mkdir -p "$INBOX"
+    cat > "$PLIST" <<PLIST_END
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.contenthub.inbox</string>
+  <key>ProgramArguments</key><array><string>$(command -v python3)</string><string>src/inbox.py</string></array>
+  <key>WorkingDirectory</key><string>$PWD</string>
+  <key>WatchPaths</key><array><string>$HOME/Downloads</string><string>$INBOX</string></array>
+  <key>StartInterval</key><integer>86400</integer>
+  <key>StandardErrorPath</key><string>$PWD/data/inbox.err</string>
+</dict></plist>
+PLIST_END
+    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err" ;;
   ""|phone) ;;
-  *) sed -n '2,9p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 python3 -m uvicorn api.main:app --host 127.0.0.1 --port 8000 &
