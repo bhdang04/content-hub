@@ -275,6 +275,8 @@ def plan():
         liked = pd.read_sql("SELECT dance_key AS key, label, credit, video_id, author FROM swipes WHERE decision = 'accept' ORDER BY at DESC", con)
         comp = pd.read_sql("SELECT * FROM competitor_posts ORDER BY views DESC", con)
         backups = pd.read_sql("SELECT date, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
+        nope = con.execute("SELECT credit, author FROM swipes WHERE decision = 'decline' AND reason = 'Not my style'").fetchall()
+        trend_views = con.execute("SELECT video_id, views FROM trending").fetchall()
     finally:
         con.close()
     posted = df["posted"].value_counts()
@@ -283,7 +285,9 @@ def plan():
     want = [{"key": dance_key(r.music_id, r.caption, r.author), "label": song(r.music_title, r.music_author),
              "credit": credit(r.caption, r.author), "video_id": r.video_id, "author": r.author, "source": "Saved"}
             for r in ideas.itertuples()]
-    want += [{"key": dance_key(sound_id(r.sound), r.caption, r.handle), "label": r.sound, "credit": credit(r.caption, r.handle),
+    # competitor rows keep the song name only; match it to your own sounds so the same dance groups together
+    own = {song(t, a).lower(): m for m, t, a in zip(df["music_id"], df["music_title"], df["music_author"]) if m}
+    want += [{"key": dance_key(own.get(r.sound.lower()) or sound_id(r.sound), r.caption, r.handle), "label": r.sound, "credit": credit(r.caption, r.handle),
               "video_id": r.video_id, "author": r.handle, "source": "Competitor"} for r in comp.itertuples()]
     liked = [r | {"credit": r["credit"] or "", "author": r["author"] or "", "source": "Trending"} for r in rows(liked)]
     keys = {x["key"] for x in liked}
@@ -293,9 +297,21 @@ def plan():
     for w in want:
         w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
         w["planned"] = w["key"] in set(planned["key"])
+    # step 9: rank by what brought you followers before (score 1 = your usual); one reason line each
+    from picker import rank
+    mine = df[df["is_ad"] == 0].assign(credit=lambda x: x["title"].map(credit))
+    mine["key"] = [dance_key(m, t) for m, t in zip(mine["music_id"], mine["title"])]
+    views = {v: count(n) for v, n in trend_views} | dict(zip(comp["video_id"], comp["views"]))
+    rk = rank(mine, [w for w in want if not w["done"]], list(d["key"]), {w["key"] for w in liked},
+              {(c or f"@{a}").lower() for c, a in nope}, views)
+    for x in want:
+        x |= rk.get(x["key"], {"score": 1, "why": "", "tired": False})
+    d = d.assign(**{f: [rk.get(k, {}).get(f) for k in d["key"]] for f in ("score", "why", "tired")})
     # a video to record from: your best take for a dance you've done, else the idea's video
     vid = {w["key"]: w["video_id"] for w in want} | dict(zip(d["key"], d.get("best_video_id", [])))
     planned["video_id"], backups["video_id"] = planned["key"].map(vid), backups["key"].map(vid)
+    why = {k: r["why"] for k, r in rk.items()}
+    planned["why"], backups["why"] = planned["key"].map(why), backups["key"].map(why)
     return clean({
         "days": [{"date": x, "posted": int(posted.get(x, 0))} for x in days],
         "ideas": want,
@@ -341,8 +357,10 @@ def plan_fill():
     done = {d["key"] for d in p["dances"]}
     cut = time.time() - 14 * 86400
     named = lambda i: i | {"label": f"{i['label']}, dc {i['credit']}" if i["credit"] else i["label"]}  # same song, other dance
-    new = [s for s in p["shortlist"] if s["key"] not in done] + [named(i) for i in p["ideas"] if not i["done"]]
-    old = [s for s in p["shortlist"] if s["key"] in done] + [d for d in p["dances"] if d["last_posted"] < cut]
+    best = lambda xs: sorted(xs, key=lambda x: -(x.get("score") or 0))  # step 9 picker score
+    new = [s for s in p["shortlist"] if s["key"] not in done] + best(named(i) for i in p["ideas"] if not i["done"])
+    old = [s for s in p["shortlist"] if s["key"] in done] + best(
+        d for d in p["dances"] if d["last_posted"] < cut - (14 * 86400 if d["tired"] else 0))  # tired: rest 4 weeks
     added, extra = fill(days, {(x["date"], x["slot"]): x["key"] for x in p["planned"]}, new, old)
     con = plan_db()
     try:

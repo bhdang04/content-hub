@@ -3,6 +3,8 @@ import { type Plan, send, useApi } from "../api";
 import { Card, Loading } from "../ui";
 
 type Pick = { key: string; label: string };
+// step 9 picker's one-line reason under a planned dance
+const why = (w: string | null) => w && <span className="block text-muted mt-0.5">{w}</span>;
 
 /** 2-week calendar, up to 3 dances a day (no set times: you post 7-11pm). Tap a dance below, then a day. */
 export default function PlanPage({ version }: { version: number }) {
@@ -11,7 +13,7 @@ export default function PlanPage({ version }: { version: number }) {
   const [picked, setPicked] = useState<Pick | null>(null);
   const [saveError, setSaveError] = useState("");
   const [at_, setAt] = useState(0); // which "want" video the player shows
-  const [preview, setPreview] = useState<{ video_id: string; name: string } | null>(null); // planned dance's reference video
+  const [preview, setPreview] = useState<{ video_id: string; name: string; why?: string | null } | null>(null); // planned dance's reference video
   if (!p) return <Loading error={error} />;
 
   const write = async (path: string, method: string, body?: object) => {
@@ -63,8 +65,8 @@ export default function PlanPage({ version }: { version: number }) {
                 return x ? (
                   <div key={slot} className="text-xs rounded-lg bg-grid p-2 flex justify-between gap-1">
                     {x.video_id
-                      ? <button className="min-w-0 break-words text-left hover:text-good" title="Watch it" onClick={() => setPreview({ video_id: x.video_id!, name: x.name })}>▶ {x.name}</button>
-                      : <span className="min-w-0 break-words">{x.name}</span>}
+                      ? <button className="min-w-0 break-words text-left hover:text-good" title="Watch it" onClick={() => setPreview({ video_id: x.video_id!, name: x.name, why: x.why })}>▶ {x.name}{why(x.why)}</button>
+                      : <span className="min-w-0 break-words">{x.name}{why(x.why)}</span>}
                     <button aria-label={`Remove ${x.name}`} className="text-muted hover:text-text" onClick={() => write(`plan/${d.date}/${slot}`, "DELETE")}>✕</button>
                   </div>
                 ) : (
@@ -79,7 +81,7 @@ export default function PlanPage({ version }: { version: number }) {
               <div className="text-muted text-xs mt-2 space-y-1">
                 <p>Backups:</p>
                 {p.backups.filter((b) => b.date === d.date).map((b) => b.video_id
-                  ? <button key={b.key} className="block w-full text-left break-words hover:text-good" onClick={() => setPreview({ video_id: b.video_id!, name: b.name })}>▶ {b.name}</button>
+                  ? <button key={b.key} title={b.why ?? undefined} className="block w-full text-left break-words hover:text-good" onClick={() => setPreview({ video_id: b.video_id!, name: b.name, why: b.why })}>▶ {b.name}</button>
                   : <p key={b.key} className="break-words">{b.name}</p>)}
               </div>
             )}
@@ -125,6 +127,7 @@ export default function PlanPage({ version }: { version: number }) {
           <iframe key={preview.video_id} src={`https://www.tiktok.com/player/v1/${preview.video_id}?description=0&music_info=0&rel=0&autoplay=1`}
                   title={preview.name} allow="autoplay; fullscreen" className="h-[80vh] max-w-full aspect-[9/16] rounded-xl bg-grid" onClick={(e) => e.stopPropagation()} />
           <p className="text-sm text-center break-words max-w-md">{preview.name}</p>
+          {preview.why && <p className="text-muted text-xs text-center max-w-md">{preview.why}</p>}
           <button autoFocus className="rounded-full border border-grid px-4 py-2" onClick={() => setPreview(null)}>Close</button>
         </div>
       )}
