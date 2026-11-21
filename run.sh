@@ -35,7 +35,7 @@ case "${1:-}" in
 </dict></plist>
 PLIST_END
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
-    echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err" ;;
+    echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
   ""|phone) ;;
   *) sed -n '2,11p' "$0" | sed 's/^# //'; exit 1 ;;
 esac

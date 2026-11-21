@@ -246,6 +246,8 @@ def plan_db():
     have = {r[1] for r in con.execute("PRAGMA table_info(swipes)")}
     for c in {"credit", "author"} - have:  # swipes tables made before these columns
         con.execute(f"ALTER TABLE swipes ADD COLUMN {c} TEXT")
+    import quest
+    quest.migrate(con)
     return con
 
 def plan_write(sql, args):
@@ -482,6 +484,16 @@ async def competitor_post_add(request: Request):
 @app.delete("/api/competitor_posts/{video_id}")
 def competitor_post_remove(video_id: str):
     return plan_write("DELETE FROM competitor_posts WHERE video_id = ?", (video_id,))
+
+@app.get("/api/quest")
+def quest_steps():
+    """This week's quest: pages Brian opens so Claude can read them. The page polls this to tick steps off."""
+    import quest
+    con = plan_db()
+    try:
+        return {"week": quest.week(), "steps": quest.steps(con)}
+    finally:
+        con.close()
 
 # ---------- upload ----------
 MAX_BYTES = 200 * 1024 * 1024

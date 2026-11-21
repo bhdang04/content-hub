@@ -1,7 +1,7 @@
 """Load Studio per-post reads (data/raw/studio/*.jsonl, written by scripts/studio_read.js) into
-the `posts` table of data/hub.db. Upsert by video_id; files load oldest-first so newer reads win.
+the `posts` table of data/hub.db. Upsert by video_id; the newest read (read_at) of each post wins.
 Private posts are skipped. Usage: ./run.sh import"""
-import glob, json, sqlite3
+import glob, json, os, sqlite3
 
 DB = "data/hub.db"
 
@@ -36,15 +36,16 @@ def row(r):
     }
 
 
-def replace_table(con, folder, table, cols, what):
-    """Newest data/raw/<folder>/*.jsonl replaces the table: its current state, so old rows drop out."""
-    files = sorted(glob.glob(f"data/raw/{folder}/*.jsonl"))
+def replace_table(con, folder, table, cols, what, keep=""):
+    """Newest data/raw/<folder>/*.jsonl replaces the table: its current state, so old rows drop out.
+    keep: SQL condition for rows that didn't come from a read (e.g. links Brian pasted) and must stay."""
+    files = sorted(glob.glob(f"data/raw/{folder}/*.jsonl"), key=os.path.getmtime)  # names vary: "2026-11-20.jsonl", "2026-11-20-1715-dance.jsonl"
     if not files:
         return
     rows = [json.loads(l) for l in open(files[-1], encoding="utf-8")]
     with con:
-        con.execute(f"DROP TABLE IF EXISTS {table}")
-        con.execute(f"CREATE TABLE {table} ({', '.join(c + ' TEXT' for c in cols)})")
+        con.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(c + ' TEXT' for c in cols)})")
+        con.execute(f"DELETE FROM {table}" + (f" WHERE NOT ({keep})" if keep else ""))
         con.executemany(f"INSERT INTO {table} VALUES ({','.join('?' * len(cols))})", [[r.get(c) for c in cols] for r in rows])
     print(f"Imported {len(rows)} {what} from {files[-1]}.")
 
@@ -63,7 +64,8 @@ def main():
             if r.get("error") or r.get("private_status", 0) != 0:
                 skipped += 1
                 continue
-            rows[r["video_id"]] = row(r)
+            if r["video_id"] not in rows or (r.get("read_at") or 0) >= (rows[r["video_id"]]["read_at"] or 0):
+                rows[r["video_id"]] = row(r)  # newest read wins, whatever the file names
     con = sqlite3.connect(DB)
     with con:
         con.execute(SCHEMA)
@@ -76,7 +78,8 @@ def main():
             rows.values())
     # "Tiktok Dances to Do" Favorites, and the weekly hashtag read (scripts/trending_read.js)
     replace_table(con, "favorites", "ideas", SOUND + ["read_at"], "saved dances")
-    replace_table(con, "trending", "trending", SOUND + ["views", "likes", "saves", "posted_at", "tag"], "trending posts")
+    replace_table(con, "trending", "trending", SOUND + ["views", "likes", "saves", "posted_at", "tag"], "trending posts",
+                  keep="tag IN ('manual', 'shared')")  # cards from pasted/shared links aren't in any read file
     total, ads = con.execute("SELECT COUNT(*), SUM(is_ad) FROM posts").fetchone()
     assert total >= len(rows)
     print(f"Imported {len(rows)} posts from {len(files)} file(s), skipped {skipped} private/error. "
