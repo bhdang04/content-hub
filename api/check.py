@@ -5,9 +5,9 @@ from pathlib import Path
 warnings.filterwarnings("ignore")  # starlette's TestClient deprecation notice
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
-from api.main import ROOT, app
+from api.main import BASE, app
 
-before = sorted((ROOT / "data" / "raw").rglob("*"))
+before = sorted((BASE / "data" / "raw").rglob("*"))
 c = TestClient(app, base_url="http://127.0.0.1")
 ok = {"X-Content-Hub": "1"}
 def zip_with(csv):
@@ -27,5 +27,5 @@ cases = [
 for label, r, want in cases:
     assert r.status_code == want, f"FAIL: {label}: got {r.status_code}, want {want}"
     print(f"ok: {label}")
-assert sorted((ROOT / "data" / "raw").rglob("*")) == before, "FAIL: a refused upload wrote a file"
+assert sorted((BASE / "data" / "raw").rglob("*")) == before, "FAIL: a refused upload wrote a file"
 print("ok: nothing written to data/raw/")

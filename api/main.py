@@ -9,7 +9,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
-os.chdir(ROOT)  # the scripts read data/raw/... relative to the project root
+# demo mode (./run.sh demo): fake data in demo/data/ only; your real data/ is never opened
+BASE = ROOT / "demo" if os.environ.get("CONTENT_HUB_DEMO") else ROOT
+os.chdir(BASE)  # the scripts read data/raw/... relative to this folder
 sys.path.insert(0, str(ROOT / "src"))
 
 GOAL, GOAL_DATE = 15_000, date(2027, 2, 28)  # follower goal and deadline
@@ -25,7 +27,7 @@ _lock = threading.Lock()  # requests run in parallel threads; two loads at once 
 
 def stamp():
     """Changes whenever an export zip or a src/ script changes, so cached results refresh."""
-    files = [*(ROOT / "data" / "raw").rglob("*.zip"), *(ROOT / "src").glob("*.py")]
+    files = [*(BASE / "data" / "raw").rglob("*.zip"), *(ROOT / "src").glob("*.py")]
     return max((p.stat().st_mtime for p in files), default=0)
 
 def cached(key, make):
@@ -54,8 +56,8 @@ def mods():
 def script(name, *args):
     """Run one src/ script as its own process (they print and save at import). Returns (stdout, stderr)."""
     env = {k: v for k, v in os.environ.items() if k != "CONTENT_HUB_RAW"}  # let track.py pick week/
-    r = subprocess.run([sys.executable, *(["-c", name] if "\n" in name else [f"src/{name}.py"]), *args],
-                       capture_output=True, text=True, env=env, cwd=ROOT)
+    r = subprocess.run([sys.executable, *(["-c", name] if "\n" in name else [str(ROOT / "src" / f"{name}.py")]), *args],
+                       capture_output=True, text=True, env=env, cwd=BASE)
     return r.stdout, r.stderr
 
 def rows(df):
@@ -85,7 +87,7 @@ def home():
 
     def advice():
         script("recommend")
-        files = sorted((ROOT / "data" / "recs").glob("*.json"))
+        files = sorted((BASE / "data" / "recs").glob("*.json"))
         return json.loads(files[-1].read_text())["recommendations"] if files else {}
 
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -107,11 +109,11 @@ def home():
 # and hand back its tables as JSON. exec into our own dict so its variables survive its SystemExit messages.
 TRACK = """
 import contextlib, io, json, sys
-sys.path.insert(0, "src")
+sys.path.insert(0, SRC)
 g, msg = {"__name__": "__main__"}, None
 with contextlib.redirect_stdout(io.StringIO()):
     try:
-        exec(compile(open("src/track.py").read(), "src/track.py", "exec"), g)
+        exec(compile(open(SRC + "/track.py").read(), "track.py", "exec"), g)
     except SystemExit as e:
         msg = str(e).strip()
 out = {"message": msg, "advice_date": g.get("s", {}).get("export_date"), "export_end": str(g["END"].date()) if "END" in g else None}
@@ -123,7 +125,7 @@ if "checks" in g:
                     for label, m in g["tests"]]
     out["still_growing"] = bool((new["age_days"] < 7).any())
 print(json.dumps(out))
-"""
+""".replace("SRC", repr(str(ROOT / "src")))
 
 @app.get("/api/track")
 def track():
@@ -168,7 +170,7 @@ def drop_second(r):
     return max(range(1, len(r)), key=lambda i: r[i - 1] - r[i])
 
 def studio():
-    db = ROOT / "data" / "hub.db"
+    db = BASE / "data" / "hub.db"
     if not db.exists():
         raise HTTPException(409, "No Studio data yet. Ask Claude to read Studio, then run ./run.sh import.")
     con = sqlite3.connect(db)
@@ -242,7 +244,7 @@ SCHEMAS = [
 ]
 
 def plan_db():
-    con = sqlite3.connect(ROOT / "data" / "hub.db")
+    con = sqlite3.connect(BASE / "data" / "hub.db")
     for q in SCHEMAS:
         con.execute(q)
     have = {r[1] for r in con.execute("PRAGMA table_info(swipes)")}
@@ -613,7 +615,7 @@ async def upload(request: Request, range: str, name: str = ""):
     saved = out_name(kind, name)
     if not saved:  # data.py reads the range start from this date
         raise HTTPException(400, f"{name}: keep TikTok's file name, it holds the start date (Overview_2026-11-12_...).")
-    out = ROOT / "data" / "raw" / range
+    out = BASE / "data" / "raw" / range
     out.mkdir(parents=True, exist_ok=True)
     (out / saved).write_bytes(body)
     return {"saved": f"data/raw/{range}/{saved}"}

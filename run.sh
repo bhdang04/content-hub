@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Content Hub. Localhost only unless you run "phone"; your data stays on this Mac.
 #   ./run.sh              dashboard: API on 127.0.0.1:8000, open http://127.0.0.1:5173 (Ctrl+C stops both)
+#   ./run.sh demo         dashboard on fake data (demo/data/), never opens your real data/
 #   ./run.sh phone        same, plus open it on your phone on the same Wi-Fi (anyone on that Wi-Fi can see it)
 #   ./run.sh analyze      text report: views, engagement, followers, viewers
 #   ./run.sh recommend    refresh the advice (what to post, fix, try)
@@ -38,8 +39,9 @@ case "${1:-}" in
 PLIST_END
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
+  demo) python3 demo/make.py; export CONTENT_HUB_DEMO=1 ;;
   ""|phone) ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 python3 -m uvicorn api.main:app --host 127.0.0.1 --port 8000 &
