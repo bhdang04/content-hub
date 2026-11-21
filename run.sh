@@ -8,6 +8,7 @@
 #   ./run.sh track        did the last advice work? (uses the past-7-days export)
 #   ./run.sh plan         fill next week's empty Plan slots + backups, print the weekly email text
 #   ./run.sh check        self-check the dashboard's safety rules (writes nothing)
+#   ./run.sh test         run the tests on fake demo data (never touches your real data/)
 #   ./run.sh import       load Studio per-post reads (data/raw/studio/) into data/hub.db
 #   ./run.sh inbox        import new Studio zips from ~/Downloads + phone links (iCloud Content Hub/inbox)
 #   ./run.sh inbox-on     run "inbox" by itself whenever those folders change (inbox-off stops it)
@@ -16,6 +17,7 @@ cd "$(dirname "$0")"
 case "${1:-}" in
   analyze|recommend|track) exec python3 "src/$1.py" "${@:2}" ;;
   check) exec python3 api/check.py ;;
+  test) exec python3 tests/test_hub.py ;;
   plan) exec python3 api/weekly.py ;;
   import) exec python3 src/studio_import.py ;;
   inbox) exec python3 src/inbox.py ;;
@@ -41,7 +43,7 @@ PLIST_END
     echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
   demo) python3 demo/make.py; export CONTENT_HUB_DEMO=1 VITE_DEMO=1 ;;  # VITE_DEMO: pages show a box for fake videos
   ""|phone) ;;
-  *) sed -n '2,13p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 # an API already on :8000 would serve the page instead (e.g. your real data during a demo), so stop
