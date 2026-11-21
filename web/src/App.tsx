@@ -9,8 +9,10 @@ import LibraryPage from "./pages/Library";
 import CompetitorsPage from "./pages/Competitors";
 import QuestPage from "./pages/Quest";
 
-const PAGES = { home: "Home", plan: "Plan", library: "Library", competitors: "Competitors", quest: "Quest", videos: "Videos", patterns: "Patterns" } as const;
-type Page = keyof typeof PAGES;
+const ALL = { home: "Home", plan: "Plan", library: "Library", competitors: "Competitors", quest: "Quest", videos: "Videos", patterns: "Patterns" } as const;
+type Page = keyof typeof ALL;
+// demo (./run.sh demo) has no Quest: it reads your real TikTok tabs, which a demo viewer doesn't have
+const PAGES: Partial<typeof ALL> = import.meta.env.VITE_DEMO === "1" ? (({ quest: _, ...rest }) => rest)(ALL) : ALL;
 const fromHash = (): Page => (location.hash.slice(1) in PAGES ? (location.hash.slice(1) as Page) : "home");
 const videoId = () => location.hash.match(/^#video\/(\d+)$/)?.[1]; // #video/<id> = one video's detail page
 
