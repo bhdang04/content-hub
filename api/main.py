@@ -305,8 +305,11 @@ def plan():
         x |= rk.get(x["key"], {"score": 1, "why": "", "tired": False})
     d = d.assign(**{f: [rk.get(k, {}).get(f) for k in d["key"]] for f in ("score", "why", "tired")})
     # a video to record from: your best take for a dance you've done, else the idea's video
-    vid = {w["key"]: w["video_id"] for w in want} | dict(zip(d["key"], d.get("best_video_id", [])))
+    own = dict(zip(d["key"], d.get("best_video_id", [])))
+    vid = {w["key"]: w["video_id"] for w in want} | own
     planned["video_id"], backups["video_id"] = planned["key"].map(vid), backups["key"].map(vid)
+    by = {w["key"]: w.get("author") for w in want} | dict.fromkeys(own)  # None = your own video
+    planned["author"], backups["author"] = planned["key"].map(by), backups["key"].map(by)
     why = {k: r["why"] for k, r in rk.items()}
     planned["why"], backups["why"] = planned["key"].map(why), backups["key"].map(why)
     return clean({
@@ -387,12 +390,18 @@ def phone_plan():
     Rewritten after every plan change. Demo mode writes demo/data/plan.html instead, never iCloud."""
     from inbox import INBOX
     try:
+        from quest import me
         p, e = plan(), html.escape
+        try:
+            mine = me()
+        except SystemExit:  # no Content export yet
+            mine = ""
         done = {d["key"]: d["times"] for d in p["dances"]}
         def item(x):
             name = e(x["name"])
-            if x.get("video_id"):
-                name = f'<a href="https://www.tiktok.com/video/{e(x["video_id"])}">{name}</a>'
+            who = x.get("author") or mine
+            if x.get("video_id") and who:  # the TikTok app only opens links with the @handle in them
+                name = f'<a href="https://www.tiktok.com/@{e(who)}/video/{e(x["video_id"])}">{name}</a>'
             tag = f'<span class="done">Done {done[x["key"]]}x</span>' if x["key"] in done else '<span class="learn">Learn</span>'
             return f"<li>{name} {tag}" + (f"<small>{e(x['why'])}</small>" if x.get("why") else "") + "</li>"
         days = ""
