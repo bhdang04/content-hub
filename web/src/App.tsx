@@ -29,12 +29,12 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
     <div className="md:flex min-h-screen">
-      <nav className="md:w-52 shrink-0 p-4 md:p-6 flex md:flex-col gap-1 items-center md:items-stretch md:sticky md:top-0 md:self-start md:h-screen md:overflow-y-auto">
-        <div className="glitch text-xl font-bold mr-4 md:mr-0 md:mb-4">Content Hub</div>
+      <nav className="md:w-52 shrink-0 p-4 md:p-6 flex md:flex-col gap-1 items-center md:items-stretch max-md:overflow-x-auto md:sticky md:top-0 md:self-start md:h-screen md:overflow-y-auto">
+        <div className="glitch text-xl font-bold mr-4 md:mr-0 md:mb-4 whitespace-nowrap">Content Hub</div>
         {(Object.keys(PAGES) as Page[]).map((p) => {
           const on = video ? p === "videos" : page === p;
           return (
-            <a key={p} href={`#${p}`} className={`relative rounded-lg px-3 py-2 text-sm transition-colors ${on ? "text-text" : "text-muted hover:text-text"}`}>
+            <a key={p} href={`#${p}`} className={`relative shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors ${on ? "text-text" : "text-muted hover:text-text"}`}>
               {/* the highlight slides from the old tab to the new one */}
               {on && <motion.span layoutId="nav-pill" transition={{ type: "spring", stiffness: 400, damping: 32 }}
                                   className="absolute inset-0 rounded-lg neon-card border-l-2 !border-l-good" />}

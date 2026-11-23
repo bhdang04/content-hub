@@ -25,9 +25,10 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
       <h1 className="text-3xl font-bold pt-2">Home</h1>
       <p className="text-muted text-sm">Past-year export: {h.range[0]} to {h.range[1]}</p>
 
+      {/* phones: the columns dissolve (max-lg:contents) so the numbers, then Dances to try, come first */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
-        <div className="space-y-4 min-w-0">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="space-y-4 min-w-0 max-lg:contents">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-lg:order-first">
             <Kpi label="Video views (year)" value={short(h.views_year)} sub={`${short(h.views_28d)} in the last 28 days`}
                  badge={change === null ? undefined : <Badge good={change >= 0}>{change >= 0 ? "+" : ""}{change.toFixed(0)}%</Badge>} />
             <Kpi label="Followers" value={short(h.followers)} sub="this year"
@@ -59,11 +60,11 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
           <TrackCard version={version} />
         </div>
 
-        <div className="space-y-4 min-w-0">
+        <div className="space-y-4 min-w-0 max-lg:contents">
           <Card title="Add new exports" sub="Drop TikTok Studio zips: Content, Overview, Followers, Viewers">
             <Upload onUploaded={onUploaded} />
           </Card>
-          <DanceSwipe version={version} />
+          <div className="max-lg:order-first min-w-0"><DanceSwipe version={version} /></div>
           <Card title="When your followers are online" sub="Average active followers by day, last 7 days">
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={h.follower_activity} margin={{ left: -10 }}>

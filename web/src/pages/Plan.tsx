@@ -7,7 +7,12 @@ type Pick = { key: string; label: string };
 // a calendar spot: a day's slot (plan) or a day's backup; n = slot or backup rank
 type Spot = { kind: "plan" | "backup"; date: string; n: number };
 // step 9 picker's one-line reason under a planned dance
-const why = (w: string | null) => w && <span className="block text-muted mt-0.5">{w}</span>;
+// on the calendar it's shortened (full sentence on hover); wording comes from src/picker.py
+const why = (w: string | null) => w && <span className="block text-muted mt-0.5" title={w}>{shortWhy(w)}</span>;
+const shortWhy = (w: string) => {
+  const m = w.match(/^Brings \+(\d+) followers a take \(you usually get \+(\d+)\)/);
+  return m ? `+${m[1]} followers a take (usual +${m[2]})` : w.startsWith("Last take got") ? "Fewer followers last time: rest it" : w;
+};
 
 /** 2-week calendar, up to 3 dances a day (no set times: you post 7-11pm). Tap a dance below, then a day. */
 export default function PlanPage({ version }: { version: number }) {
@@ -150,7 +155,7 @@ export default function PlanPage({ version }: { version: number }) {
         ))}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-4 items-start">
         <Card title="Dances I want to do"
               sub={`Dances you ✓ on Home, your saved Favorites, then competitors' posts, by song. ${doneCount ? `${doneCount} you've already posted are left out (they're in Library).` : ""}`}>
           {p.ideas.length === 0 && <p className="text-muted text-sm">Nothing yet. ✓ dances on Home, or add posts on the Competitors page.</p>}
