@@ -12,6 +12,7 @@
 #   ./run.sh import       load Studio per-post reads (data/raw/studio/) into data/hub.db
 #   ./run.sh inbox        import new Studio zips from ~/Downloads + phone links (iCloud Content Hub/inbox)
 #   ./run.sh inbox-on     run "inbox" by itself whenever those folders change (inbox-off stops it)
+#   ./run.sh login-on     start the dashboard by itself at every login (login-off stops it)
 set -e
 cd "$(dirname "$0")"
 case "${1:-}" in
@@ -41,9 +42,30 @@ case "${1:-}" in
 PLIST_END
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "Auto-import on. Log: data/inbox.log, errors: data/inbox.err"; exit 0 ;;
+  login-on|login-off)
+    PLIST=~/Library/LaunchAgents/com.contenthub.dashboard.plist
+    launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+    if [ "$1" = login-off ]; then rm -f "$PLIST"; echo "Dashboard won't start at login."; exit 0; fi
+    # PATH copied in: launchd's bare PATH has no npm/node
+    cat > "$PLIST" <<PLIST_END
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.contenthub.dashboard</string>
+  <key>ProgramArguments</key><array><string>$PWD/run.sh</string></array>
+  <key>WorkingDirectory</key><string>$PWD</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$PATH</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$PWD/data/dashboard.log</string>
+  <key>StandardErrorPath</key><string>$PWD/data/dashboard.log</string>
+</dict></plist>
+PLIST_END
+    echo "Dashboard will start at every login (http://127.0.0.1:5173). Log: data/dashboard.log. Undo: ./run.sh login-off"
+    echo "Not started now (run ./run.sh or log out/in). Window: Safari > File > Add to Dock, then Dock icon > Options > Open at Login."
+    exit 0 ;;
   demo) python3 demo/make.py; export CONTENT_HUB_DEMO=1 VITE_DEMO=1 ;;  # VITE_DEMO: pages show a box for fake videos
   ""|phone) ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# //'; exit 1 ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# //'; exit 1 ;;
 esac
 [ -d web/node_modules ] || (cd web && npm install)
 # an API already on :8000 would serve the page instead (e.g. your real data during a demo), so stop

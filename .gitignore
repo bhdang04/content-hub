@@ -8,4 +8,5 @@ data/plans/
 data/hub.db
 data/inbox.log
 data/inbox.err
+data/dashboard.log
 demo/data/
