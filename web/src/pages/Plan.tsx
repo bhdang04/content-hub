@@ -59,7 +59,7 @@ export default function PlanPage({ version }: { version: number }) {
   // shortlist holds both lists: dances you've done (added on Library) and new ones (+ Add in the player)
   const saved = new Set(p.shortlist.map((s) => s.key));
   const fromLibrary = p.shortlist.filter((s) => !s.planned && best.has(s.key));
-  const added = p.shortlist.filter((s) => !s.planned && !best.has(s.key));
+  const added = p.shortlist.filter((s) => !s.planned && !s.checked && !best.has(s.key)); // ticked off on Home = done, even before the export shows it
   const want = p.ideas.filter((i) => !i.done && !i.planned && !saved.has(i.key));
   const n = Math.min(at_, want.length - 1); // the list shrinks after each Add
   const cur = want[n];

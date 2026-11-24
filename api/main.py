@@ -231,6 +231,8 @@ def post(video_id: str):
 SCHEMAS = [
     "CREATE TABLE IF NOT EXISTS plan (date TEXT, slot INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, slot))",
     "CREATE TABLE IF NOT EXISTS shortlist (dance_key TEXT PRIMARY KEY, label TEXT, added_at INTEGER)",
+    # dances ticked off as posted on Home; a planned dance that day with no tick drops back to the want list at midnight
+    "CREATE TABLE IF NOT EXISTS plan_done (date TEXT, dance_key TEXT, PRIMARY KEY (date, dance_key))",
     # backup dances per day, picked by the weekly planner (./run.sh plan); refilled each run
     "CREATE TABLE IF NOT EXISTS backups (date TEXT, rank INTEGER, dance_key TEXT, dance_name TEXT, PRIMARY KEY (date, rank))",
     # every Home swipe and why: read by Claude in the weekly trends read; later, ranking
@@ -277,6 +279,7 @@ def plan():
         backups = pd.read_sql("SELECT date, rank, dance_key AS key, dance_name AS name FROM backups WHERE date >= ? ORDER BY date, rank", con, params=[days[0]])
         nope = con.execute("SELECT credit, author FROM swipes WHERE decision = 'decline' AND reason = 'Not my style'").fetchall()
         trend_views = con.execute("SELECT video_id, views FROM trending").fetchall()
+        checked = {r[0] for r in con.execute("SELECT dance_key FROM plan_done")}
     finally:
         con.close()
     posted = df["posted"].value_counts()
@@ -295,7 +298,7 @@ def plan():
     seen = set()
     want = [w for w in want if not (w["key"] in seen or seen.add(w["key"]))]  # one per dance, first one wins
     for w in want:
-        w["done"] = done.get(w["key"], 0)  # same sound + same dc credit as a dance you've posted
+        w["done"] = done.get(w["key"], 0) or int(w["key"] in checked)  # same sound + same dc credit as a dance you've posted, or one you ticked off on Home before the next export shows it
         w["planned"] = w["key"] in set(planned["key"])
     # step 9: rank by what brought you followers before (score 1 = your usual); one reason line each
     from picker import rank
@@ -320,7 +323,7 @@ def plan():
         "ideas": want,
         "planned": rows(planned),
         "backups": rows(backups),
-        "shortlist": rows(short.assign(planned=short["key"].isin(planned["key"]))),
+        "shortlist": rows(short.assign(planned=short["key"].isin(planned["key"]), checked=short["key"].isin(checked))),
         "dances": rows(d.sort_values("best_views", ascending=False)),
     })
 
@@ -339,6 +342,39 @@ async def _dance(request: Request):
     if not (isinstance(key, str) and isinstance(name, str) and 0 < len(key) <= 100 and 0 < len(name) <= 200):
         raise HTTPException(400, "bad dance")
     return key, name
+
+@app.get("/api/today")
+def today():
+    """Today's planned dances (Pacific day) with a tick each: Home's checklist. Light: no Studio data needed."""
+    day = str(pd.Timestamp.now(tz="America/Los_Angeles").date())
+    con = plan_db()
+    try:
+        r = con.execute("SELECT p.slot, p.dance_key, p.dance_name, d.dance_key IS NOT NULL FROM plan p "
+                        "LEFT JOIN plan_done d ON d.date = p.date AND d.dance_key = p.dance_key WHERE p.date = ? ORDER BY p.slot", (day,)).fetchall()
+    finally:
+        con.close()
+    return {"date": day, "dances": [{"slot": s, "key": k, "name": n, "checked": bool(c)} for s, k, n, c in r]}
+
+@app.put("/api/plan/{day}/{slot}/done")
+async def plan_tick(day: str, slot: int, request: Request):
+    """Tick (or untick) the dance in that slot as posted. A ticked dance counts as done and stays off the want list."""
+    _slot(day, slot)
+    body = await request.json()
+    if not isinstance(body, dict) or type(body.get("done")) is not bool:
+        raise HTTPException(400, "send {done: true or false}")
+    con = plan_db()
+    try:
+        with con:
+            r = con.execute("SELECT dance_key FROM plan WHERE date = ? AND slot = ?", (day, slot)).fetchone()
+            if not r:
+                raise HTTPException(404, "nothing planned there")
+            if body["done"]:
+                con.execute("INSERT OR IGNORE INTO plan_done VALUES (?, ?)", (day, r[0]))
+            else:
+                con.execute("DELETE FROM plan_done WHERE date = ? AND dance_key = ?", (day, r[0]))
+    finally:
+        con.close()
+    return {"ok": True}
 
 @app.put("/api/plan/{day}/{slot}")
 async def plan_put(day: str, slot: int, request: Request):

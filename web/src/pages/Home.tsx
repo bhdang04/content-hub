@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { type Home, type Post, type Track, type Trend, num, send, sendMsg, short, useApi } from "../api";
+import { type Home, type Post, type Today, type Track, type Trend, num, send, sendMsg, short, useApi } from "../api";
 import { Badge, Card, Kpi, Loading, Overlay, RecList, TikTok } from "../ui";
 
 const GOOD = "#25f4ee", GRID = "#26262c", MUTED = "#a1a1aa", CARD = "#16161a";
@@ -28,6 +28,7 @@ export default function HomePage({ version, onUploaded }: { version: number; onU
       {/* phones: the columns dissolve (max-lg:contents) so the numbers, then Dances to try, come first */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
         <div className="space-y-4 min-w-0 max-lg:contents">
+          <div className="max-lg:order-first"><TodayCard /></div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-lg:order-first">
             <Kpi label="Video views (year)" value={short(h.views_year)} sub={`${short(h.views_28d)} in the last 28 days`}
                  badge={change === null ? undefined : <Badge good={change >= 0}>{change >= 0 ? "+" : ""}{change.toFixed(0)}%</Badge>} />
@@ -104,6 +105,37 @@ function TrackCard({ version }: { version: number }) {
             {t.still_growing && <p className="text-muted text-xs mt-2">Videos under 7 days old are still collecting views; check again after the next export.</p>}
           </>
         )}
+    </Card>
+  );
+}
+
+/** Today's planned dances. Tick one when you've posted it; anything unticked is back on Plan's "Dances I want to do" at midnight (Pacific). */
+function TodayCard() {
+  const [bump, setBump] = useState(0);
+  const [err, setErr] = useState("");
+  const { data: t } = useApi<Today>("today", bump);
+  if (!t) return null;
+  const tick = async (slot: number, done: boolean) => {
+    const ok = await send(`plan/${t.date}/${slot}/done`, "PUT", { done });
+    setErr(ok ? "" : "Couldn't save that. Is the dashboard still running?");
+    if (ok) setBump((b) => b + 1);
+  };
+  return (
+    <Card title="Dances to do today" sub="Tick each one once you've posted it. Unticked ones go back on your Plan list at midnight.">
+      {t.dances.length === 0 ? <p className="text-muted text-sm">Nothing planned for today. Pick dances on the Plan tab.</p> : (
+        <ul>
+          {t.dances.map((d) => (
+            <li key={d.slot} className="border-b border-grid last:border-0">
+              <button role="checkbox" aria-checked={d.checked} onClick={() => tick(d.slot, !d.checked)}
+                      className="flex w-full items-start gap-3 py-2 text-left hover:text-good">
+                <span aria-hidden className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border ${d.checked ? "border-good bg-good/20 text-good" : "border-muted"}`}>{d.checked ? "✓" : ""}</span>
+                <span className={`break-words ${d.checked ? "text-muted line-through" : ""}`}>{d.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {err && <p className="text-bad-text text-sm mt-2">{err}</p>}
     </Card>
   );
 }

@@ -48,12 +48,13 @@ export type Plan = {
   days: { date: string; posted: number }[];
   planned: { date: string; slot: number; key: string; name: string; video_id: string | null; why: string | null }[];
   backups: { date: string; rank: number; key: string; name: string; video_id: string | null; why: string | null }[]; // weekly planner's spare dances per day (./run.sh plan)
-  shortlist: { key: string; label: string; planned: boolean }[];
+  shortlist: { key: string; label: string; planned: boolean; checked?: boolean }[];
   // "Tiktok Dances to Do" Favorites, named by song; done = times you've posted the same dance
   ideas: { key: string; label: string; credit: string; video_id: string; author: string; done: number; planned: boolean; source: "Trending" | "Saved" | "Competitor" }[];
   dances: Dance[]; // best views first
 };
 /** POST JSON; returns the API's error text ("" when saved), so forms can show why it was refused. */
+export type Today = { date: string; dances: { slot: number; key: string; name: string; checked: boolean }[] };
 export const sendMsg = (path: string, body: object) =>
   fetch(`/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
     .then(async (r) => (r.ok ? "" : ((await r.json().catch(() => ({}))).detail ?? `${r.status}`)), () => "Couldn't save. Is the dashboard still running?");

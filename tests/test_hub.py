@@ -104,6 +104,22 @@ def _():
     assert move({"kind": "plan", "date": "2020-01-01", "n": 0}, {"kind": "plan", "date": d, "n": 1}).status_code == 404
 
 
+@test("ticking a planned dance marks it done; unticking undoes it; bad ticks are refused")
+def _():
+    d = next_week()[0]
+    key = next(x["key"] for x in c.get("/api/plan").json()["planned"] if x["date"] == d and x["slot"] == 0)
+    idea = lambda: next((i for i in c.get("/api/plan").json()["ideas"] if i["key"] == key), None)
+    before = idea()
+    assert c.put(f"/api/plan/{d}/0/done", json={"done": True}).status_code == 200
+    assert idea() is None or idea()["done"] >= 1  # off the want list
+    assert c.put(f"/api/plan/{d}/0/done", json={"done": False}).status_code == 200
+    assert idea() == before
+    assert c.put(f"/api/plan/{d}/0/done", json={"done": "yes"}).status_code == 400
+    assert c.put("/api/plan/2020-01-01/0/done", json={"done": True}).status_code == 404
+    day = c.get("/api/today").json()
+    assert set(day) == {"date", "dances"} and all({"slot", "key", "name", "checked"} == set(x) for x in day["dances"])
+
+
 @test("phone plan is written to demo/data, with Learn tags")
 def _():
     page = (BASE / "data" / "plan.html").read_text()
