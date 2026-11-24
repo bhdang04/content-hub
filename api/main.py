@@ -138,6 +138,9 @@ def videos():
     t = pd.DataFrame({"title": v["title"], "posted": day(v["Post time"]), "views": v["Total views"],
                       "likes": v["Total likes"], "comments": v["Total comments"], "shares": v["Total shares"],
                       "engagement_pct": engagement(v), "link": v["Video link"]})
+    # exports give tiktok.com/video/<id>, which 404s; TikTok only opens links with the @handle in them
+    import quest
+    t["link"] = t["link"].str.replace("tiktok.com/video/", f"tiktok.com/@{quest.me()}/video/", regex=False)
     return rows(t.sort_values("views", ascending=False))
 
 @app.get("/api/patterns")
