@@ -54,7 +54,7 @@ export type Plan = {
   dances: Dance[]; // best views first
 };
 /** POST JSON; returns the API's error text ("" when saved), so forms can show why it was refused. */
-export type Today = { date: string; dances: { slot: number; key: string; name: string; checked: boolean }[] };
+export type Today = { date: string; dances: { slot: number; key: string; name: string; checked: boolean; link: string | null }[] };
 export const sendMsg = (path: string, body: object) =>
   fetch(`/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
     .then(async (r) => (r.ok ? "" : ((await r.json().catch(() => ({}))).detail ?? `${r.status}`)), () => "Couldn't save. Is the dashboard still running?");

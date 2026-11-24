@@ -353,7 +353,17 @@ def today():
                         "LEFT JOIN plan_done d ON d.date = p.date AND d.dance_key = p.dance_key WHERE p.date = ? ORDER BY p.slot", (day,)).fetchall()
     finally:
         con.close()
-    return {"date": day, "dances": [{"slot": s, "key": k, "name": n, "checked": bool(c)} for s, k, n, c in r]}
+    try:  # the video to learn from; needs Studio data, so no link (not an error) without it
+        info = {x["key"]: x for x in plan()["planned"] if x["date"] == day}
+        import quest
+        mine = quest.me()
+    except (HTTPException, SystemExit):
+        info, mine = {}, ""
+    def link(k):
+        x = info.get(k) or {}
+        who = x.get("author") or mine  # no author = your own video
+        return f"https://www.tiktok.com/@{who}/video/{x['video_id']}" if x.get("video_id") and who else None
+    return {"date": day, "dances": [{"slot": s, "key": k, "name": n, "checked": bool(c), "link": link(k)} for s, k, n, c in r]}
 
 @app.put("/api/plan/{day}/{slot}/done")
 async def plan_tick(day: str, slot: int, request: Request):

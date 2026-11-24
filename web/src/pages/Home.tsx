@@ -125,12 +125,12 @@ function TodayCard() {
       {t.dances.length === 0 ? <p className="text-muted text-sm">Nothing planned for today. Pick dances on the Plan tab.</p> : (
         <ul>
           {t.dances.map((d) => (
-            <li key={d.slot} className="border-b border-grid last:border-0">
-              <button role="checkbox" aria-checked={d.checked} onClick={() => tick(d.slot, !d.checked)}
-                      className="flex w-full items-start gap-3 py-2 text-left hover:text-good">
-                <span aria-hidden className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border ${d.checked ? "border-good bg-good/20 text-good" : "border-muted"}`}>{d.checked ? "✓" : ""}</span>
-                <span className={`break-words ${d.checked ? "text-muted line-through" : ""}`}>{d.name}</span>
-              </button>
+            <li key={d.slot} className="border-b border-grid last:border-0 flex items-start gap-3 py-2">
+              <button role="checkbox" aria-checked={d.checked} aria-label={`Posted: ${d.name}`} onClick={() => tick(d.slot, !d.checked)}
+                      className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border hover:border-good ${d.checked ? "border-good bg-good/20 text-good" : "border-muted"}`}>{d.checked ? "✓" : ""}</button>
+              {d.link
+                ? <a href={d.link} target="_blank" rel="noreferrer" title="Open the video on TikTok" className={`break-words hover:underline ${d.checked ? "text-muted line-through" : ""}`}>{d.name}</a>
+                : <span className={`break-words ${d.checked ? "text-muted line-through" : ""}`}>{d.name}</span>}
             </li>
           ))}
         </ul>
